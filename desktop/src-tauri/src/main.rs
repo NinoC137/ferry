@@ -97,6 +97,14 @@ struct WorkflowRequest { kind: String, device: String, nat: bool, persist: bool,
 #[serde(rename_all = "camelCase")]
 struct DeviceCandidate { transport: String, value: String, detail: String }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanRequest { subnet: String, use_mdns: bool }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanHit { ip: String, open: Vec<u16>, banner: String, mac: String, known_as: String, hostname: String, via: String, legacy: bool }
+
 fn probe_device(d: &Device) -> ProbeResult {
     match d.transport {
         Transport::Ssh => {
@@ -253,6 +261,17 @@ fn discover_local_devices() -> Vec<DeviceCandidate> {
         candidates.push(DeviceCandidate { transport: "serial".into(), value: port, detail: "Local serial port".into() });
     }
     candidates
+}
+
+#[tauri::command]
+fn scan_network(request: ScanRequest) -> Vec<ScanHit> {
+    let cfg = Config::load();
+    let subnet = (!request.subnet.trim().is_empty()).then_some(request.subnet.trim());
+    ferry::scan::sweep_opts(&cfg, subnet, request.use_mdns).into_iter().map(|hit| ScanHit {
+        legacy: hit.banner.to_ascii_lowercase().contains("dropbear"),
+        ip: hit.ip, open: hit.open, banner: hit.banner, mac: hit.mac,
+        known_as: hit.known_as.unwrap_or_default(), hostname: hit.hostname, via: hit.via,
+    }).collect()
 }
 
 #[tauri::command]
@@ -660,6 +679,7 @@ fn main() {
             save_device,
             check_connection,
             discover_local_devices,
+            scan_network,
             transfer,
             list_forwards,
             add_forward,

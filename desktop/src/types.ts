@@ -50,6 +50,7 @@ export interface BlackboxView { name: string; running: boolean; incidents: numbe
 export interface WorkflowPlan { kind: string; device: string; preflightOk: boolean; preflight: string; steps: string[]; rollback: string; }
 export interface WorkflowRequest { kind: string; device: string; nat: boolean; persist: boolean; bootOk: boolean; mode: string; confirmed: boolean; }
 export interface DeviceCandidate { transport: Transport; value: string; detail: string; }
+export interface ScanHit { ip: string; open: number[]; banner: string; mac: string; knownAs: string; hostname: string; via: string; legacy: boolean; }
 
 export const newDevice = (): DeviceForm => ({
   name: "new-board",

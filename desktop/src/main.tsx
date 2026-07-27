@@ -16,6 +16,7 @@ import {
   Network,
   Plus,
   RefreshCcw,
+  Radar,
   Save,
   Server,
   Settings2,
@@ -26,6 +27,7 @@ import {
 import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
 import { OverviewPanel } from "./OverviewPanel";
+import { ScanPanel } from "./ScanPanel";
 import { TerminalPane } from "./TerminalPane";
 import type { DeviceCandidate, DeviceForm, DeviceSummary } from "./types";
 import { newDevice } from "./types";
@@ -54,7 +56,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>(["Desktop workspace ready."]);
   const [busy, setBusy] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
-  const [view, setView] = useState<"terminal" | "operations" | "overview">("overview");
+  const [view, setView] = useState<"terminal" | "operations" | "overview" | "scan">("overview");
   const [creating, setCreating] = useState(false);
   const [candidates, setCandidates] = useState<DeviceCandidate[]>([]);
 
@@ -98,10 +100,10 @@ function App() {
     setConnectionMessage("");
   };
 
-  const beginNewDevice = () => {
+  const beginNewDevice = (seed = newDevice()) => {
     setCreating(true);
     setSelected("");
-    setForm(newDevice());
+    setForm(seed);
     setCandidates([]);
     setConnectionMessage("Draft profile: choose a transport and save it.");
   };
@@ -195,9 +197,9 @@ function App() {
         </header>
 
         <section className="sidebar-section devices-section">
-          <div className="section-label"><span>DEVICES</span><button className="icon-button small" title="Add device profile" onClick={beginNewDevice}><Plus size={16} /></button></div>
+          <div className="section-label"><span>DEVICES</span><button className="icon-button small" title="Add device profile" onClick={() => beginNewDevice()}><Plus size={16} /></button></div>
           <div className="device-list">
-            {creating && <button className="device-row selected draft-device" onClick={beginNewDevice}><span className="status-dot" /><Plus size={16} /><span className="device-copy"><strong>New device</strong><small>Unsaved profile</small></span></button>}
+            {creating && <button className="device-row selected draft-device" onClick={() => beginNewDevice()}><span className="status-dot" /><Plus size={16} /><span className="device-copy"><strong>New device</strong><small>Unsaved profile</small></span></button>}
             {devices.map((device) => {
               const Icon = iconForTransport(device.transport);
               return <button className={`device-row ${selected === device.name ? "selected" : ""}`} key={device.name} onClick={() => selectDevice(device.name)}>
@@ -251,6 +253,7 @@ function App() {
           <div className="header-tools">
             {connectionMessage && <span className="connection-message">{connectionMessage}</span>}
             <button className={`header-mode ${view === "overview" ? "active" : ""}`} title="Open fleet overview" onClick={() => setView("overview")}><LayoutDashboard size={16} /></button>
+            <button className={`header-mode ${view === "scan" ? "active" : ""}`} title="Discover devices" onClick={() => setView("scan")}><Radar size={16} /></button>
             <button className={`header-mode ${view === "operations" ? "active" : ""}`} title="Open operations workbench" onClick={() => setView("operations")}><Clipboard size={16} /></button>
             <button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />New terminal</button>
           </div>
@@ -268,6 +271,7 @@ function App() {
               {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
             </div>
             <div className={`workspace-layer ${view === "overview" ? "active" : ""}`}><OverviewPanel devices={devices} busy={busy} onRefresh={() => void refreshDevices()} onSelect={selectDevice} /></div>
+            <div className={`workspace-layer ${view === "scan" ? "active" : ""}`}><ScanPanel onDraft={beginNewDevice} onActivity={addActivity} /></div>
             <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} active={view === "operations"} onActivity={addActivity} onOpenTask={openTask} /></div>
           </div>
           <aside className="activity-panel">

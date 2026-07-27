@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BlackboxView, DeviceCandidate, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
+import type { BlackboxView, DeviceCandidate, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, ScanHit, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
 
 const isDesktop = "__TAURI_INTERNALS__" in window;
 
@@ -74,6 +74,8 @@ export async function checkConnection(name: string): Promise<ProbeResult> {
 export async function discoverLocalDevices(): Promise<DeviceCandidate[]> {
   return isDesktop ? invoke<DeviceCandidate[]>("discover_local_devices") : [];
 }
+
+export const scanNetwork = (subnet: string, useMdns: boolean) => invoke<ScanHit[]>("scan_network", { request: { subnet, useMdns } });
 
 export async function startTerminal(name: string, cols: number, rows: number, command?: string): Promise<TerminalStarted> {
   if (isDesktop) return invoke<TerminalStarted>("start_terminal", { name, cols, rows, command });
