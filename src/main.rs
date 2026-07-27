@@ -19,6 +19,8 @@ mod netdiag;
 mod peripheral_brief;
 mod proxyd;
 mod pty;
+#[allow(dead_code)]
+mod plugins;
 mod runx;
 mod scan;
 mod serialx;
@@ -118,6 +120,7 @@ fn known_command(s: &str) -> bool {
             | "watch"
             | "proxy"
             | "hw"
+            | "plugin"
             | "help"
             | "-h"
             | "--help"
@@ -172,6 +175,7 @@ fn dispatch(args: Vec<String>) -> i32 {
         "watch" => cmd_watch(tail),
         "proxy" => cmd_proxy(tail),
         "hw" => cmd_hw(tail),
+        "plugin" => cmd_plugin(tail),
         // 内部入口
         "__askpass" => sshx::askpass_main(tail.first().map(|s| s.as_str()).unwrap_or("")),
         "__proxyd" => {
@@ -238,6 +242,7 @@ fn json_capable(cmd: &str) -> bool {
             | "--help"
             | "serve"
             | "hw"
+            | "plugin"
     )
 }
 
@@ -1517,6 +1522,162 @@ fn cmd_hw(args: Vec<String>) -> i32 {
     }
 }
 
+// ---------------- plugins ----------------
+
+fn plugin_json(plugin: &plugins::Plugin) -> J {
+    J::obj(vec![
+        ("id", J::s(&plugin.id)),
+        ("name", J::s(&plugin.name)),
+        ("version", J::s(&plugin.version)),
+        ("description", J::s(&plugin.description)),
+        ("transport", J::s(&plugin.transport)),
+        ("risk", J::s(&plugin.risk)),
+        ("requires", J::strs(&plugin.requires)),
+        ("arguments", J::strs(&plugin.arguments)),
+        ("summary", J::s(&plugin.summary)),
+        ("preview", J::strs(&plugin.preview)),
+        ("path", J::s(plugin.dir.display().to_string())),
+    ])
+}
+
+fn print_plugin(plugin: &plugins::Plugin) {
+    println!("{} {} v{}", bold(&plugin.id), dim("-"), plugin.version);
+    println!("  {}", plugin.name);
+    println!("  {}", plugin.description);
+    println!("  transport: {}    risk: {}", plugin.transport, plugin.risk);
+    if !plugin.requires.is_empty() {
+        println!("  host requirements: {}", plugin.requires.join(", "));
+    }
+    println!("  arguments: {}", plugins::display_arguments(plugin));
+    println!("  package: {}", plugin.dir.display());
+}
+
+fn cmd_plugin(args: Vec<String>) -> i32 {
+    let action = args.first().map(String::as_str).unwrap_or("ls");
+    match action {
+        "ls" | "list" => match plugins::list() {
+            Ok(items) => {
+                if jsonout::json_mode() {
+                    let builtins = plugins::builtin_ids()
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<_>>();
+                    return jsonout::emit_ok(vec![
+                        ("plugins", J::arr(items.iter().map(plugin_json).collect())),
+                        ("builtins", J::strs(&builtins)),
+                    ]);
+                }
+                if items.is_empty() {
+                    println!("No plugins installed.");
+                    println!("Built-ins available: {}", plugins::builtin_ids().join(", "));
+                    println!("Install one with: fy plugin install sysroot-sync");
+                } else {
+                    for plugin in &items {
+                        print_plugin(plugin);
+                    }
+                }
+                0
+            }
+            Err(error) => fail(code::CONFIG, &error),
+        },
+        "show" => {
+            let Some(id) = args.get(1) else {
+                return fail(code::USAGE, "usage: fy plugin show <plugin-id>");
+            };
+            match plugins::load(id) {
+                Ok(plugin) => {
+                    if jsonout::json_mode() {
+                        jsonout::emit_ok(vec![("plugin", plugin_json(&plugin))])
+                    } else {
+                        print_plugin(&plugin);
+                        for step in &plugin.preview {
+                            println!("  - {step}");
+                        }
+                        0
+                    }
+                }
+                Err(error) => fail(code::CONFIG, &error),
+            }
+        }
+        "install" => {
+            let Some(source) = args.get(1) else {
+                return fail_hint(
+                    code::USAGE,
+                    "usage: fy plugin install <builtin-id|local-plugin-directory> [--force]",
+                    Some("Built-in: fy plugin install sysroot-sync; local packages need plugin.toml and its declared entrypoint"),
+                );
+            };
+            if jsonout::json_mode() {
+                return fail(code::USAGE, "plugin installation writes local files and is not available with --json");
+            }
+            let force = has_flag(&args, "--force");
+            let installed = if plugins::builtin_ids().contains(&source.as_str()) {
+                plugins::install_builtin(source, force)
+            } else {
+                plugins::install_local(&PathBuf::from(source), force)
+            };
+            match installed {
+                Ok(plugin) => {
+                    ok(&format!("plugin '{}' installed", plugin.id));
+                    print_plugin(&plugin);
+                    0
+                }
+                Err(error) => fail(code::CONFIG, &error),
+            }
+        }
+        "run" => {
+            if jsonout::json_mode() {
+                return fail(code::USAGE, "plugin run streams plugin output and is not available with --json");
+            }
+            let (Some(id), Some(device_name)) = (args.get(1), args.get(2)) else {
+                return fail_hint(
+                    code::USAGE,
+                    "usage: fy plugin run <plugin-id> <device> [-- plugin arguments]",
+                    Some("Example: fy plugin run sysroot-sync rk -- --dest /opt/sysroot"),
+                );
+            };
+            let plugin = match plugins::load(id) {
+                Ok(plugin) => plugin,
+                Err(error) => return fail(code::CONFIG, &error),
+            };
+            let device = match need_dev(&Config::load(), Some(device_name)) {
+                Ok(device) => device,
+                Err(exit) => return exit,
+            };
+            let plugin_args: Vec<String> = args
+                .iter()
+                .skip(3)
+                .filter(|argument| argument.as_str() != "--")
+                .cloned()
+                .collect();
+            match plugins::preview(&plugin, &device, &plugin_args) {
+                Ok(steps) => {
+                    for step in steps {
+                        info(&step);
+                    }
+                }
+                Err(error) => return fail(code::MISSING_DEP, &error),
+            }
+            match plugins::run_inherit_plugin(&plugin, &device, &plugin_args) {
+                Ok(0) => 0,
+                Ok(status) => fail(code::FAIL, &format!("plugin '{}' exited with status {status}", plugin.id)),
+                Err(error) => fail(code::FAIL, &format!("plugin '{}' failed: {error}", plugin.id)),
+            }
+        }
+        "help" | "-h" | "--help" => {
+            println!("fy plugin ls");
+            println!("fy plugin show <plugin-id>");
+            println!("fy plugin install <builtin-id|local-plugin-directory> [--force]");
+            println!("fy plugin run <plugin-id> <device> [-- plugin arguments]");
+            println!();
+            println!("Plugins are local, reviewable packages. {}.", plugins::source_hint());
+            println!("The built-in sysroot-sync plugin mirrors /lib, /usr/lib and /usr/include over SSH.");
+            0
+        }
+        other => fail(code::USAGE, &format!("fy plugin supports ls, show, install, run; not '{other}'")),
+    }
+}
+
 fn cmd_blame(args: Vec<String>) -> i32 {
     let cfg = Config::load();
     let pos = positional(&args, &["-n"]);
@@ -2020,6 +2181,7 @@ fn emit_catalog() -> i32 {
         cmd("scan", "fy scan [--subnet CIDR] [--add] [--no-mdns]", "发现设备：mDNS + 网段扫描 + 指纹认领", true),
         cmd("info", "fy info <设备>", "身份卡片：内核/架构/MAC/machine-id", true),
         cmd("hw", "fy hw <设备> [--out 目录] [--no-bundle] [--no-brief] [--include-identifiers] [--max-dt-nodes N] | fy hw brief <hardware.json> [--out peripherals.md]", "一次性采集硬件清单，或离线从 JSON 生成可读的 peripherals.md", true),
+        cmd("plugin", "fy plugin ls|show|install|run", "本地可审阅功能插件：安装、预检、运行；内置 sysroot-sync 可同步交叉编译 sysroot", true),
         cmd("up", "fy up <设备> [--boot]", "通道爬升：串口登录→配网→ssh+免密", false),
         cmd("usb", "fy usb net|gadget|install", "USB 一键配网", false),
         cmd("sync", "fy sync <设备> <本地目录> <远端目录> [--exec 命令] [--once]", "保存即上板", false),
@@ -2103,6 +2265,7 @@ fn print_help() {
   fy info <设备>             身份卡片: 内核/架构/MAC/machine-id/实时状态
   fy hw <设备> [--out 目录]  一次性硬件快照: JSON/设备树 + 外设简报 peripherals.md
   fy hw brief <hardware.json> [--out peripherals.md]  离线从既有 JSON 重建外设简报
+  fy plugin ls/install/run    本地功能扩展；内置 sysroot-sync 可拉取目标机库和头文件
 
 {s2}
   fy push <设备> <本地> [远端]      上传: 断点续传 + sha256 校验 + 进度条
@@ -2137,6 +2300,8 @@ fn print_help() {
   fy run <设备> ./a.out [参数]     push+chmod+运行+回传退出码, 像本地一样
   fy debug <设备> ./a.out [--port] gdbserver+转发一条龙, 给出 gdb 连接命令
   fy sync <设备> <本地> <远端> [--exec '命令'] 保存即上板(rsync/tar/adb 自动选)
+  fy plugin install sysroot-sync
+  fy plugin run sysroot-sync rk -- --dest /opt/sysroot
   fy log <设备> [--save f]   journalctl/syslog/dmesg/logcat 自动选
   fy top                     多板实时仪表盘 (CPU/内存/温度/rootfs)
   fy all [前缀] -- <命令>    多板并行执行, 彩色前缀区分

@@ -51,6 +51,9 @@ export interface WorkflowPlan { kind: string; device: string; preflightOk: boole
 export interface WorkflowRequest { kind: string; device: string; nat: boolean; persist: boolean; bootOk: boolean; mode: string; confirmed: boolean; }
 export interface DeviceCandidate { transport: Transport; value: string; detail: string; }
 export interface ScanHit { ip: string; open: number[]; banner: string; mac: string; knownAs: string; hostname: string; via: string; legacy: boolean; }
+export interface PluginView { id: string; name: string; version: string; description: string; transport: string; risk: string; requires: string[]; arguments: string[]; summary: string; preview: string[]; }
+export interface PluginPlan { id: string; device: string; risk: string; steps: string[]; command: string; }
+export interface PluginRunResult { ok: boolean; detail: string; output: string; }
 
 export const newDevice = (): DeviceForm => ({
   name: "new-board",

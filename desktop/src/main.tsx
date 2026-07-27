@@ -15,6 +15,7 @@ import {
   KeyRound,
   MonitorCog,
   Network,
+  PackagePlus,
   Plus,
   RefreshCcw,
   Radar,
@@ -28,6 +29,7 @@ import {
 import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice, setupSshKey } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
 import { OverviewPanel } from "./OverviewPanel";
+import { PluginsPanel } from "./PluginsPanel";
 import { ScanPanel } from "./ScanPanel";
 import { TerminalPane } from "./TerminalPane";
 import type { DeviceCandidate, DeviceForm, DeviceSummary } from "./types";
@@ -57,7 +59,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>(["Desktop workspace ready."]);
   const [busy, setBusy] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
-  const [view, setView] = useState<"terminal" | "operations" | "overview" | "scan">("overview");
+  const [view, setView] = useState<"terminal" | "operations" | "overview" | "scan" | "plugins">("overview");
   const [creating, setCreating] = useState(false);
   const [candidates, setCandidates] = useState<DeviceCandidate[]>([]);
   const [keyPassword, setKeyPassword] = useState("");
@@ -278,6 +280,7 @@ function App() {
             <button className={`header-mode ${view === "overview" ? "active" : ""}`} title="Open fleet overview" onClick={() => setView("overview")}><LayoutDashboard size={16} /></button>
             <button className={`header-mode ${view === "scan" ? "active" : ""}`} title="Discover devices" onClick={() => setView("scan")}><Radar size={16} /></button>
             <button className={`header-mode ${view === "operations" ? "active" : ""}`} title="Open operations workbench" onClick={() => setView("operations")}><Clipboard size={16} /></button>
+            <button className={`header-mode ${view === "plugins" ? "active" : ""}`} title="Open plugins" onClick={() => setView("plugins")}><PackagePlus size={16} /></button>
             <button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />New terminal</button>
           </div>
         </header>
@@ -296,6 +299,7 @@ function App() {
             <div className={`workspace-layer ${view === "overview" ? "active" : ""}`}><OverviewPanel devices={devices} busy={busy} onRefresh={() => void refreshDevices()} onSelect={selectDevice} /></div>
             <div className={`workspace-layer ${view === "scan" ? "active" : ""}`}><ScanPanel onDraft={beginNewDevice} onActivity={addActivity} /></div>
             <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} active={view === "operations"} onActivity={addActivity} onOpenTask={openTask} /></div>
+            <div className={`workspace-layer ${view === "plugins" ? "active" : ""}`}><PluginsPanel device={selected} transport={selectedDevice?.transport ?? ""} hasPassword={selectedDevice?.hasPassword ?? false} active={view === "plugins"} onActivity={addActivity} /></div>
           </div>
           <aside className="activity-panel">
             <div className="activity-title"><Activity size={16} />Activity</div>

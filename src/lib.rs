@@ -18,6 +18,7 @@ pub mod mdns;
 pub mod netdiag;
 pub mod proxyd;
 pub mod pty;
+pub mod plugins;
 pub mod runx;
 pub mod scan;
 pub mod serialx;

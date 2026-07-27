@@ -176,6 +176,38 @@ Useful transfer controls:
 --no-verify   disable post-transfer verification
 ```
 
+### Plugins and sysroots
+
+Ferry plugins are local, reviewable packages for host-side workflows that do not belong in the core binary. A package contains a `plugin.toml` manifest and the executable named by its `entry` field. The manifest declares its required transport, host dependencies, arguments, risk category, and a preview of its work. Ferry refuses entrypoint path escapes and installs packages under `~/.config/ferry/plugins/<id>/` (or `$FERRY_HOME/plugins/<id>/`).
+
+```bash
+# See installed packages and built-ins.
+fy plugin ls
+
+# Install Ferry's maintained sysroot package.
+fy plugin install sysroot-sync
+fy plugin show sysroot-sync
+
+# Sync an SSH target into a conventional system location. sudo is interactive in the CLI.
+fy plugin run sysroot-sync rk -- --dest /opt/sysroot
+
+# A user-writable sysroot needs no sudo. --delete mirrors target-side deletions locally.
+fy plugin run sysroot-sync rk -- --dest ~/ferry-sysroots/rk --no-sudo --delete
+
+# Install a reviewed package developed locally.
+fy plugin install /path/to/my-ferry-plugin
+```
+
+`sysroot-sync` uses the selected SSH profile and runs the equivalent of the following three incremental transfers, preserving Ferry's SSH port, identity file, legacy compatibility, known-host policy, and connection reuse settings:
+
+```text
+rsync -av -e "ssh <Ferry SSH options>" user@target:/lib         <sysroot>/
+rsync -av -e "ssh <Ferry SSH options>" user@target:/usr/lib     <sysroot>/usr/
+rsync -av -e "ssh <Ferry SSH options>" user@target:/usr/include <sysroot>/usr/
+```
+
+It reads from the target and writes only the chosen host directory. `--delete` is deliberately opt-in because it can remove local sysroot files. The desktop Plugins workbench uses SSH key authentication only and never passes a saved profile password to a plugin. It defaults to a user-writable destination; selecting sudo for `/opt/sysroot` requires a previously authorized `sudo -v` session because a background desktop command cannot safely prompt for a host password.
+
 ### Forwarding and resilient connectivity
 
 ```bash
@@ -256,7 +288,7 @@ fy ui --port 8000 --no-open
 
 ### Tauri desktop workbench
 
-The repository also contains a native desktop client in `desktop/`. It reuses Ferry device modules and the same PTY/WebSocket transport, with fleet overview, discovery, device profile drafts, xterm sessions, transfer/forward/top/black-box panels, and guarded network/recovery workflows.
+The repository also contains a native desktop client in `desktop/`. It reuses Ferry device modules and the same PTY/WebSocket transport, with fleet overview, discovery, device profile drafts, xterm sessions, transfer/forward/top/black-box panels, guarded network/recovery workflows, and a Plugins workbench for installing local packages and running sysroot synchronization with a visible preflight plan.
 
 ```bash
 cd desktop
@@ -336,7 +368,8 @@ ferry/
 │   └── hwprobe.rs       read-only hardware inventory and brief generation
 ├── assets/
 │   ├── ferry-gadget.sh  target-side USB gadget script
-│   └── hwprobe.sh       target-side hardware collector
+│   ├── hwprobe.sh       target-side hardware collector
+│   └── plugins/         bundled local plugin packages (installed explicitly)
 └── desktop/             Tauri + React + xterm.js desktop workbench
 ```
 

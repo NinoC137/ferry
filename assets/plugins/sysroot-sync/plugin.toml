@@ -1,0 +1,12 @@
+[plugin]
+id = "sysroot-sync"
+name = "Sysroot Sync"
+version = "1.0.0"
+description = "Mirror /lib, /usr/lib and /usr/include from an SSH target into a local cross-compilation sysroot."
+entry = "run.sh"
+transport = "ssh"
+risk = "host-write"
+requires = ["rsync", "ssh"]
+arguments = ["--dest <local-sysroot>", "--no-sudo", "--delete"]
+summary = "Reads target libraries and headers over SSH; writes the selected host sysroot directory."
+preview = ["Mirror target /lib into <destination>/lib", "Mirror target /usr/lib into <destination>/usr/lib", "Mirror target /usr/include into <destination>/usr/include"]

@@ -109,6 +109,37 @@ struct ScanHit { ip: String, open: Vec<u16>, banner: String, mac: String, known_
 #[serde(rename_all = "camelCase")]
 struct SetupSshKeyRequest { name: String, password: String }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginView {
+    id: String,
+    name: String,
+    version: String,
+    description: String,
+    transport: String,
+    risk: String,
+    requires: Vec<String>,
+    arguments: Vec<String>,
+    summary: String,
+    preview: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginInstallRequest { source: String, force: bool }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginRunRequest { id: String, name: String, arguments: Vec<String> }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginPlan { id: String, device: String, risk: String, steps: Vec<String>, command: String }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginRunResult { ok: bool, detail: String, output: String }
+
 fn probe_device(d: &Device) -> ProbeResult {
     match d.transport {
         Transport::Ssh => {
@@ -267,6 +298,84 @@ fn setup_ssh_key(request: SetupSshKeyRequest) -> Result<OperationResult, String>
     ferry::sshx::keyup_with_password(&device, password).map_err(|error| error.to_string())?;
     ferry::sshx::verify_key_auth(&device).map_err(|error| error.to_string())?;
     Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}.", device.name) })
+}
+
+fn plugin_view(plugin: &ferry::plugins::Plugin) -> PluginView {
+    PluginView {
+        id: plugin.id.clone(),
+        name: plugin.name.clone(),
+        version: plugin.version.clone(),
+        description: plugin.description.clone(),
+        transport: plugin.transport.clone(),
+        risk: plugin.risk.clone(),
+        requires: plugin.requires.clone(),
+        arguments: plugin.arguments.clone(),
+        summary: plugin.summary.clone(),
+        preview: plugin.preview.clone(),
+    }
+}
+
+fn trim_plugin_output(output: String) -> String {
+    const LIMIT: usize = 48 * 1024;
+    if output.len() <= LIMIT {
+        return output;
+    }
+    let start = output.len() - LIMIT;
+    let start = output.char_indices().find(|(index, _)| *index >= start).map(|(index, _)| index).unwrap_or(0);
+    format!("[ferry] earlier plugin output omitted\n{}", &output[start..])
+}
+
+fn desktop_plugin_device(name: &str) -> Result<Device, String> {
+    Config::load()
+        .find(name)
+        .ok_or_else(|| format!("Unknown device '{name}'."))
+}
+
+#[tauri::command]
+fn list_plugins() -> Result<Vec<PluginView>, String> {
+    ferry::plugins::list()
+        .map(|plugins| plugins.iter().map(plugin_view).collect())
+}
+
+#[tauri::command]
+fn install_plugin(request: PluginInstallRequest) -> Result<PluginView, String> {
+    let source = request.source.trim();
+    if source.is_empty() {
+        return Err("Choose a built-in plugin id or a local plugin package directory.".into());
+    }
+    let plugin = if ferry::plugins::builtin_ids().contains(&source) {
+        ferry::plugins::install_builtin(source, request.force)
+    } else {
+        ferry::plugins::install_local(Path::new(source), request.force)
+    }?;
+    Ok(plugin_view(&plugin))
+}
+
+#[tauri::command]
+fn plugin_preview(request: PluginRunRequest) -> Result<PluginPlan, String> {
+    let plugin = ferry::plugins::load(&request.id)?;
+    let device = desktop_plugin_device(&request.name)?;
+    let steps = ferry::plugins::preview(&plugin, &device, &request.arguments)?;
+    let command = ferry::plugins::command_preview(&plugin, &request.arguments)?;
+    Ok(PluginPlan { id: plugin.id, device: device.name, risk: plugin.risk, steps, command })
+}
+
+#[tauri::command]
+fn run_plugin(request: PluginRunRequest) -> Result<PluginRunResult, String> {
+    let plugin = ferry::plugins::load(&request.id)?;
+    let device = desktop_plugin_device(&request.name)?;
+    let output = ferry::plugins::run_capture_plugin(&plugin, &device, &request.arguments)?;
+    let text = trim_plugin_output(format!("{}{}", output.stdout, output.stderr));
+    let ok = output.status == 0;
+    Ok(PluginRunResult {
+        ok,
+        detail: if ok {
+            format!("Plugin '{}' completed for {}.", plugin.id, device.name)
+        } else {
+            format!("Plugin '{}' exited with status {}.", plugin.id, output.status)
+        },
+        output: text,
+    })
 }
 
 #[tauri::command]
@@ -697,6 +806,10 @@ fn main() {
             save_device,
             check_connection,
             setup_ssh_key,
+            list_plugins,
+            install_plugin,
+            plugin_preview,
+            run_plugin,
             discover_local_devices,
             scan_network,
             transfer,

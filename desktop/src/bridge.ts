@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BlackboxView, DeviceCandidate, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, ScanHit, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
+import type { BlackboxView, DeviceCandidate, DeviceForm, DeviceSummary, ForwardView, OperationResult, PluginPlan, PluginRunResult, PluginView, ProbeResult, ScanHit, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
 
 const isDesktop = "__TAURI_INTERNALS__" in window;
 
@@ -72,6 +72,11 @@ export async function checkConnection(name: string): Promise<ProbeResult> {
 }
 
 export const setupSshKey = (name: string, password: string) => invoke<OperationResult>("setup_ssh_key", { request: { name, password } });
+
+export const listPlugins = () => isDesktop ? invoke<PluginView[]>("list_plugins") : Promise.resolve([]);
+export const installPlugin = (source: string, force = false) => invoke<PluginView>("install_plugin", { request: { source, force } });
+export const pluginPreview = (id: string, name: string, arguments_: string[]) => invoke<PluginPlan>("plugin_preview", { request: { id, name, arguments: arguments_ } });
+export const runPlugin = (id: string, name: string, arguments_: string[]) => invoke<PluginRunResult>("run_plugin", { request: { id, name, arguments: arguments_ } });
 
 export async function discoverLocalDevices(): Promise<DeviceCandidate[]> {
   return isDesktop ? invoke<DeviceCandidate[]>("discover_local_devices") : [];
