@@ -18,6 +18,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .brand-row strong { color: #f5fbfc; font-size: 16px; letter-spacing: 0; }
 .brand-row span { color: #8b9aa2; font-size: 9px; font-weight: 700; letter-spacing: .1em; }
 .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; color: #8aead0; background: #153d3c; border: 1px solid #28615c; border-radius: 7px; }
+.brand-mark:hover { background:#1d504e; }
 .icon-button { display: grid; width: 30px; height: 30px; place-items: center; color: #9daeb6; background: transparent; border: 0; border-radius: 5px; }
 .icon-button:hover { color: #e7f1f2; background: #29373d; }
 .icon-button.small { width: 24px; height: 24px; }
@@ -93,6 +94,10 @@ input:focus, select:focus, textarea:focus { border-color: #54a99c; box-shadow: 0
 .terminal-host .xterm { height: 100%; }
 .terminal-host .xterm-viewport { border-radius: 2px; }
 .operations-panel { display:grid; grid-template-rows:54px minmax(0,1fr); height:100%; background:#10181c; }
+.overview-panel { display:grid; grid-template-rows:64px minmax(0,1fr); height:100%; background:#10181c; }
+.overview-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 18px; border-bottom:1px solid #26323a; }.overview-header > div { display:grid; gap:3px; }.overview-header strong { color:#e5f0f1; font-size:15px; }.overview-header span { color:#82959c; font-size:10px; }
+.overview-scroll { padding:16px; overflow:auto; }.overview-metrics { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:9px; margin-bottom:13px; }.overview-metrics > div { display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; column-gap:8px; align-items:center; padding:11px; color:#83a3a2; background:#17262b; border:1px solid #2b4248; border-radius:6px; }.overview-metrics svg { grid-row:1 / 3; color:#7ee0c2; }.overview-metrics strong { color:#e1f2ef; font-size:16px; }.overview-metrics span { font-size:10px; }
+.overview-list { display:grid; gap:7px; }.overview-device { display:grid; gap:6px; width:100%; padding:11px; text-align:left; color:#97abb1; background:#151f24; border:1px solid #2b3a41; border-radius:6px; }.overview-device:hover { background:#1c2b31; border-color:#46716f; }.overview-device-title { display:flex; align-items:center; gap:7px; min-width:0; }.overview-device-title strong { color:#dce9eb; font-size:12px; }.overview-device-title > span:last-child { overflow:hidden; margin-left:auto; color:#899da3; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.transport-badge { padding:2px 5px; color:#96d9cb; background:#1d4544; border-radius:3px; font-family:SFMono-Regular, Menlo, monospace; font-size:9px; }.overview-endpoint { color:#b5c7ca; font-family:SFMono-Regular, Menlo, monospace; font-size:10px; }.fingerprint-grid { display:flex; flex-wrap:wrap; gap:7px 15px; color:#82979e; font-size:10px; }.fingerprint-grid span { display:inline-flex; align-items:center; gap:4px; }.fingerprint-grid svg { color:#d2a965; }.overview-empty { padding:30px; color:#82959c; text-align:center; font-size:12px; }
 .operations-header { display:flex; align-items:center; justify-content:space-between; padding:0 16px; border-bottom:1px solid #26323a; }
 .operations-header > div { display:grid; gap:2px; }
 .operations-header strong { color:#e4eff0; font-size:14px; }

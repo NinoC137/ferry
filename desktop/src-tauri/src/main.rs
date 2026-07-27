@@ -23,6 +23,10 @@ struct DeviceSummary {
     online: bool,
     status: String,
     hostname: String,
+    os: String,
+    kernel: String,
+    arch: String,
+    last_ip: String,
     last_seen: i64,
     has_password: bool,
     blackbox_running: bool,
@@ -165,24 +169,27 @@ fn validate_name(name: &str) -> Result<(), String> {
 #[tauri::command]
 fn list_devices() -> Vec<DeviceSummary> {
     let cfg = Config::load();
-    cfg.devices
-        .values()
-        .map(|d| {
-            let probe = probe_device(d);
-            let facts = ferry::config::facts_load(&d.name);
+    let devices: Vec<Device> = cfg.devices.values().cloned().collect();
+    let handles: Vec<_> = devices.into_iter().map(|device| std::thread::spawn(move || {
+            let probe = probe_device(&device);
+            let facts = ferry::config::facts_load(&device.name);
             DeviceSummary {
-                name: d.name.clone(),
-                transport: d.transport.as_str().into(),
-                endpoint: d.endpoint(),
+                name: device.name.clone(),
+                transport: device.transport.as_str().into(),
+                endpoint: device.endpoint(),
                 online: probe.online,
                 status: probe.detail,
                 hostname: facts.hostname,
+                os: facts.os,
+                kernel: facts.kernel,
+                arch: facts.arch,
+                last_ip: facts.last_ip,
                 last_seen: facts.last_seen,
-                has_password: d.password.is_some(),
-                blackbox_running: ferry::blackbox::running_for(&d.name),
+                has_password: device.password.is_some(),
+                blackbox_running: ferry::blackbox::running_for(&device.name),
             }
-        })
-        .collect()
+        })).collect();
+    handles.into_iter().filter_map(|handle| handle.join().ok()).collect()
 }
 
 #[tauri::command]

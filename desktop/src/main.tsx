@@ -11,6 +11,7 @@ import {
   FileKey2,
   Gauge,
   LoaderCircle,
+  LayoutDashboard,
   MonitorCog,
   Network,
   Plus,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
+import { OverviewPanel } from "./OverviewPanel";
 import { TerminalPane } from "./TerminalPane";
 import type { DeviceCandidate, DeviceForm, DeviceSummary } from "./types";
 import { newDevice } from "./types";
@@ -52,7 +54,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>(["Desktop workspace ready."]);
   const [busy, setBusy] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
-  const [view, setView] = useState<"terminal" | "operations">("terminal");
+  const [view, setView] = useState<"terminal" | "operations" | "overview">("overview");
   const [creating, setCreating] = useState(false);
   const [candidates, setCandidates] = useState<DeviceCandidate[]>([]);
 
@@ -182,7 +184,7 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <header className="brand-row">
-          <div className="brand-mark"><Network size={19} /></div>
+          <button className="brand-mark" title="Open fleet overview" onClick={() => setView("overview")}><Network size={19} /></button>
           <div>
             <strong>Ferry</strong>
             <span>DEVICE WORKBENCH</span>
@@ -248,6 +250,7 @@ function App() {
           </div>
           <div className="header-tools">
             {connectionMessage && <span className="connection-message">{connectionMessage}</span>}
+            <button className={`header-mode ${view === "overview" ? "active" : ""}`} title="Open fleet overview" onClick={() => setView("overview")}><LayoutDashboard size={16} /></button>
             <button className={`header-mode ${view === "operations" ? "active" : ""}`} title="Open operations workbench" onClick={() => setView("operations")}><Clipboard size={16} /></button>
             <button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />New terminal</button>
           </div>
@@ -264,6 +267,7 @@ function App() {
               {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id && view === "terminal"} onStarted={started} onActivity={addActivity} /></div>)}
               {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
             </div>
+            <div className={`workspace-layer ${view === "overview" ? "active" : ""}`}><OverviewPanel devices={devices} busy={busy} onRefresh={() => void refreshDevices()} onSelect={selectDevice} /></div>
             <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} active={view === "operations"} onActivity={addActivity} onOpenTask={openTask} /></div>
           </div>
           <aside className="activity-panel">

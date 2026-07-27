@@ -7,6 +7,10 @@ export interface DeviceSummary {
   online: boolean;
   status: string;
   hostname: string;
+  os: string;
+  kernel: string;
+  arch: string;
+  lastIp: string;
   lastSeen: number;
   hasPassword: boolean;
   blackboxRunning: boolean;
