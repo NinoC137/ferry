@@ -50,13 +50,23 @@ impl Upstream {
         match scheme.as_str() {
             "http" | "https" => Ok(Upstream::Http(hostport)),
             "socks5" | "socks5h" | "socks" => Ok(Upstream::Socks5(hostport)),
-            other => Err(format!("不支持的上游代理协议 '{}'（只认 http / socks5）", other)),
+            other => Err(format!(
+                "不支持的上游代理协议 '{}'（只认 http / socks5）",
+                other
+            )),
         }
     }
 
     /// 从主机环境变量里捡一个上游出来。
     pub fn from_env() -> Upstream {
-        for k in ["all_proxy", "ALL_PROXY", "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"] {
+        for k in [
+            "all_proxy",
+            "ALL_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "HTTP_PROXY",
+        ] {
             if let Ok(v) = std::env::var(k) {
                 if !v.trim().is_empty() {
                     if let Ok(u) = Upstream::parse(&v) {
@@ -188,7 +198,11 @@ fn handle_http(client: TcpStream, up: &Upstream) -> std::io::Result<()> {
                 return Ok(());
             }
         };
-        let target = if http_upstream.is_some() { uri.as_str() } else { path };
+        let target = if http_upstream.is_some() {
+            uri.as_str()
+        } else {
+            path
+        };
         let mut fwd = format!("{} {} {}\r\n", method, target, version);
         let mut has_host = false;
         for l in lines {
@@ -211,7 +225,8 @@ fn handle_http(client: TcpStream, up: &Upstream) -> std::io::Result<()> {
     } else {
         let mut c = client;
         let _ = c.write_all(
-            "HTTP/1.1 400 Bad Request\r\n\r\nferry proxyd: 只支持 CONNECT 或绝对地址 http 请求\r\n".as_bytes(),
+            "HTTP/1.1 400 Bad Request\r\n\r\nferry proxyd: 只支持 CONNECT 或绝对地址 http 请求\r\n"
+                .as_bytes(),
         );
         Ok(())
     }
@@ -271,7 +286,10 @@ fn handle_socks5(mut client: TcpStream, up: &Upstream) -> std::io::Result<()> {
             let a = read_exact_n(&mut client, 16)?;
             let mut segs = vec![];
             for i in 0..8 {
-                segs.push(format!("{:x}", u16::from_be_bytes([a[i * 2], a[i * 2 + 1]])));
+                segs.push(format!(
+                    "{:x}",
+                    u16::from_be_bytes([a[i * 2], a[i * 2 + 1]])
+                ));
             }
             format!("[{}]", segs.join(":"))
         }
@@ -332,7 +350,11 @@ fn read_http_head(s: &mut TcpStream) -> std::io::Result<String> {
 }
 
 fn connect_direct(hostport: &str) -> std::io::Result<TcpStream> {
-    let addr = if hostport.contains(':') { hostport.to_string() } else { format!("{}:80", hostport) };
+    let addr = if hostport.contains(':') {
+        hostport.to_string()
+    } else {
+        format!("{}:80", hostport)
+    };
     let sock = addr
         .to_socket_addrs()?
         .next()
@@ -382,7 +404,9 @@ fn connect_via(up: &Upstream, hostport: &str, default_port: u16) -> std::io::Res
                     "上游 SOCKS5 要求认证，ferry 目前只支持免认证上游",
                 ));
             }
-            let (host, port_s) = hostport.rsplit_once(':').unwrap_or((hostport.as_str(), "80"));
+            let (host, port_s) = hostport
+                .rsplit_once(':')
+                .unwrap_or((hostport.as_str(), "80"));
             let port: u16 = port_s.parse().unwrap_or(default_port);
             let host = host.trim_matches(|c| c == '[' || c == ']');
             if host.is_empty() || host.len() > 255 {
@@ -393,7 +417,13 @@ fn connect_via(up: &Upstream, hostport: &str, default_port: u16) -> std::io::Res
                     "目标域名过长，SOCKS5 装不下",
                 ));
             }
-            let mut req = vec![S5_VER, S5_CMD_CONNECT, 0x00, S5_ATYP_DOMAIN, host.len() as u8];
+            let mut req = vec![
+                S5_VER,
+                S5_CMD_CONNECT,
+                0x00,
+                S5_ATYP_DOMAIN,
+                host.len() as u8,
+            ];
             req.extend_from_slice(host.as_bytes());
             req.extend_from_slice(&port.to_be_bytes());
             s.write_all(&req)?;
@@ -425,7 +455,11 @@ fn connect_via(up: &Upstream, hostport: &str, default_port: u16) -> std::io::Res
 }
 
 /// 双向搬运直到任一端关闭。reader 里可能还缓存着 client 已发的数据。
-fn splice(client_r: BufReader<TcpStream>, client_w: TcpStream, upstream: TcpStream) -> std::io::Result<()> {
+fn splice(
+    client_r: BufReader<TcpStream>,
+    client_w: TcpStream,
+    upstream: TcpStream,
+) -> std::io::Result<()> {
     let mut up_w = upstream.try_clone()?;
     let mut up_r = upstream;
     let mut cw = client_w;
@@ -576,7 +610,10 @@ mod tests {
             Upstream::Http("127.0.0.1:7897".into())
         );
         // 没写协议就当 http
-        assert_eq!(Upstream::parse("127.0.0.1:7897").unwrap(), Upstream::Http("127.0.0.1:7897".into()));
+        assert_eq!(
+            Upstream::parse("127.0.0.1:7897").unwrap(),
+            Upstream::Http("127.0.0.1:7897".into())
+        );
         assert_eq!(
             Upstream::parse("socks5://127.0.0.1:7897").unwrap(),
             Upstream::Socks5("127.0.0.1:7897".into())
@@ -659,7 +696,9 @@ mod tests {
                 let mut c = c;
                 let mut b = [0u8; 1024];
                 let _ = c.read(&mut b);
-                let _ = c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi");
+                let _ = c.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi",
+                );
             }
         });
         let px = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -682,7 +721,11 @@ mod tests {
         s.write_all(req.as_bytes()).unwrap();
         let mut out = String::new();
         let _ = s.read_to_string(&mut out);
-        assert!(out.contains("200 OK") && out.ends_with("hi"), "HTTP 代理没通: {:?}", out);
+        assert!(
+            out.contains("200 OK") && out.ends_with("hi"),
+            "HTTP 代理没通: {:?}",
+            out
+        );
     }
 
     #[test]

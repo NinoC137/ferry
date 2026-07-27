@@ -40,8 +40,14 @@ pub fn incidents_dir(dev: &str) -> PathBuf {
 // ---------------- 管理命令 ----------------
 
 pub fn start(cfg: &Config, name: &str) -> Result<(), String> {
-    let d = cfg.devices.get(name).ok_or_else(|| format!("没有设备 '{}'", name))?;
-    let port = d.dev.clone().ok_or("该设备档案没有串口 (dev 字段)。fy add 时用 --serial 指定")?;
+    let d = cfg
+        .devices
+        .get(name)
+        .ok_or_else(|| format!("没有设备 '{}'", name))?;
+    let port = d
+        .dev
+        .clone()
+        .ok_or("该设备档案没有串口 (dev 字段)。fy add 时用 --serial 指定")?;
     let mut st = State::load();
     let pid = st.get_int(&format!("bb.{}", name), "pid") as i32;
     if pid > 0 && pid_alive(pid) {
@@ -94,11 +100,19 @@ pub fn status(cfg: &Config) {
     for name in st.doc.children("bb") {
         let pid = st.get_int(&format!("bb.{}", name), "pid") as i32;
         let alive = pid_alive(pid);
-        let sz = std::fs::metadata(log_path(&name)).map(|m| m.len()).unwrap_or(0);
-        let n_inc = std::fs::read_dir(incidents_dir(&name)).map(|r| r.count()).unwrap_or(0);
+        let sz = std::fs::metadata(log_path(&name))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let n_inc = std::fs::read_dir(incidents_dir(&name))
+            .map(|r| r.count())
+            .unwrap_or(0);
         rows.push(vec![
             name.clone(),
-            if alive { green(&format!("运行中 pid {}", pid)) } else { red("已死") },
+            if alive {
+                green(&format!("运行中 pid {}", pid))
+            } else {
+                red("已死")
+            },
             format!("{:.1} MB", sz as f64 / 1e6),
             format!("{} 起事故", n_inc),
         ]);
@@ -155,7 +169,10 @@ pub fn blame(name: &str, lines: usize) {
         warn("黑匣子还没有录到任何东西（fy bb start 开启后台录制）");
         return;
     }
-    println!("{}", bold(&format!("没有 panic 记录，给你录制尾部 {} 行:", lines)));
+    println!(
+        "{}",
+        bold(&format!("没有 panic 记录，给你录制尾部 {} 行:", lines))
+    );
     let all: Vec<&str> = log.lines().collect();
     for l in all.iter().rev().take(lines).rev() {
         println!("{}", l);
@@ -212,7 +229,8 @@ pub fn daemon_main(name: &str, port: &str, baud: u32) -> ! {
         });
     }
 
-    let mut ring: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(RING_LINES);
+    let mut ring: std::collections::VecDeque<String> =
+        std::collections::VecDeque::with_capacity(RING_LINES);
     let mut linebuf = String::new();
     let mut last_incident: i64 = 0;
 
@@ -235,10 +253,17 @@ pub fn daemon_main(name: &str, port: &str, baud: u32) -> ! {
 
         // 日志文件（超 8MB 轮转一份 .1）
         let lp = log_path(name);
-        if std::fs::metadata(&lp).map(|m| m.len() > 8 * 1024 * 1024).unwrap_or(false) {
+        if std::fs::metadata(&lp)
+            .map(|m| m.len() > 8 * 1024 * 1024)
+            .unwrap_or(false)
+        {
             let _ = std::fs::rename(&lp, bb_dir().join(format!("{}.log.1", name)));
         }
-        let mut logf = std::fs::OpenOptions::new().create(true).append(true).open(&lp).ok();
+        let mut logf = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&lp)
+            .ok();
 
         // 读串口线程 → 主循环
         let (tx_down, rx_down) = std::sync::mpsc::channel::<Vec<u8>>();
@@ -320,13 +345,18 @@ pub fn daemon_main(name: &str, port: &str, baud: u32) -> ! {
 fn save_incident(name: &str, pattern: &str, ring: &std::collections::VecDeque<String>) {
     let ts = {
         // 用 date 命令拿本地时间戳，避免自己实现日历
-        let o = std::process::Command::new("date").arg("+%Y%m%d-%H%M%S").output();
+        let o = std::process::Command::new("date")
+            .arg("+%Y%m%d-%H%M%S")
+            .output();
         o.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .unwrap_or_else(|_| now_epoch().to_string())
     };
     let path = incidents_dir(name).join(format!("{}.log", ts));
     let _ = ensure_dir(&incidents_dir(name));
-    let mut content = format!("# ferry blackbox incident\n# 设备: {}\n# 命中: {}\n# 时间: {}\n\n", name, pattern, ts);
+    let mut content = format!(
+        "# ferry blackbox incident\n# 设备: {}\n# 命中: {}\n# 时间: {}\n\n",
+        name, pattern, ts
+    );
     for l in ring {
         content.push_str(l);
         content.push('\n');
@@ -345,7 +375,10 @@ pub fn serial_shell(cfg: &Config, name: &str) -> std::io::Result<()> {
     if running_for(name) {
         return attach(name);
     }
-    let port = d.dev.clone().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "档案缺串口路径"))?;
+    let port = d
+        .dev
+        .clone()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "档案缺串口路径"))?;
     let _ = Transport::Serial;
     serialx::console(&port, d.baud, None)
 }

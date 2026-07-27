@@ -104,22 +104,40 @@ impl Config {
         let mut devices = BTreeMap::new();
         for name in doc.children("devices") {
             let t = format!("devices.{}", name);
-            let gs = |k: &str| doc.get(&t, k).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let gs = |k: &str| {
+                doc.get(&t, k)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            };
             let gi = |k: &str| doc.get(&t, k).and_then(|v| v.as_int());
             let gb = |k: &str| doc.get(&t, k).and_then(|v| v.as_bool());
-            let transport = gs("transport").and_then(|s| Transport::parse(&s)).unwrap_or(Transport::Ssh);
+            let transport = gs("transport")
+                .and_then(|s| Transport::parse(&s))
+                .unwrap_or(Transport::Ssh);
             let mut d = Device::new(&name, transport);
-            if let Some(v) = gs("host") { d.host = v; }
-            if let Some(v) = gi("port") { d.port = v as u16; }
-            if let Some(v) = gs("user") { d.user = v; }
+            if let Some(v) = gs("host") {
+                d.host = v;
+            }
+            if let Some(v) = gi("port") {
+                d.port = v as u16;
+            }
+            if let Some(v) = gs("user") {
+                d.user = v;
+            }
             d.password = gs("password");
             d.key = gs("key");
             d.legacy = gb("legacy").unwrap_or(false);
             d.adb_serial = gs("adb_serial");
             d.dev = gs("dev");
-            if let Some(v) = gi("baud") { d.baud = v as u32; }
-            if let Some(v) = gs("dest") { d.dest = v; }
-            if let Some(v) = gs("notes") { d.notes = v; }
+            if let Some(v) = gi("baud") {
+                d.baud = v as u32;
+            }
+            if let Some(v) = gs("dest") {
+                d.dest = v;
+            }
+            if let Some(v) = gs("notes") {
+                d.notes = v;
+            }
             devices.insert(name, d);
         }
         Config { devices, doc }
@@ -135,31 +153,52 @@ impl Config {
         }
         for (name, d) in &self.devices {
             let t = format!("devices.{}", name);
-            self.doc.set(&t, "transport", Val::S(d.transport.as_str().into()));
+            self.doc
+                .set(&t, "transport", Val::S(d.transport.as_str().into()));
             match d.transport {
                 Transport::Ssh => {
                     self.doc.set(&t, "host", Val::S(d.host.clone()));
                     self.doc.set(&t, "port", Val::I(d.port as i64));
                     self.doc.set(&t, "user", Val::S(d.user.clone()));
-                    if let Some(p) = &d.password { self.doc.set(&t, "password", Val::S(p.clone())); }
-                    if let Some(k) = &d.key { self.doc.set(&t, "key", Val::S(k.clone())); }
-                    if d.legacy { self.doc.set(&t, "legacy", Val::B(true)); }
+                    if let Some(p) = &d.password {
+                        self.doc.set(&t, "password", Val::S(p.clone()));
+                    }
+                    if let Some(k) = &d.key {
+                        self.doc.set(&t, "key", Val::S(k.clone()));
+                    }
+                    if d.legacy {
+                        self.doc.set(&t, "legacy", Val::B(true));
+                    }
                 }
                 Transport::Adb => {
-                    if let Some(s) = &d.adb_serial { self.doc.set(&t, "adb_serial", Val::S(s.clone())); }
+                    if let Some(s) = &d.adb_serial {
+                        self.doc.set(&t, "adb_serial", Val::S(s.clone()));
+                    }
                 }
                 Transport::Serial => {}
             }
             // 串口信息对任何 transport 都可作为兜底通道保留
-            if let Some(dev) = &d.dev { self.doc.set(&t, "dev", Val::S(dev.clone())); }
-            if d.baud != 115200 { self.doc.set(&t, "baud", Val::I(d.baud as i64)); }
-            if d.dest != "/tmp" { self.doc.set(&t, "dest", Val::S(d.dest.clone())); }
-            if !d.notes.is_empty() { self.doc.set(&t, "notes", Val::S(d.notes.clone())); }
+            if let Some(dev) = &d.dev {
+                self.doc.set(&t, "dev", Val::S(dev.clone()));
+            }
+            if d.baud != 115200 {
+                self.doc.set(&t, "baud", Val::I(d.baud as i64));
+            }
+            if d.dest != "/tmp" {
+                self.doc.set(&t, "dest", Val::S(d.dest.clone()));
+            }
+            if !d.notes.is_empty() {
+                self.doc.set(&t, "notes", Val::S(d.notes.clone()));
+            }
             // 串口/adb 设备也需要保存 user/password：fy up 串口自动登录要用；
             // 且 up 爬升后可能补全 host/port 作为 ssh 候选。
             if d.transport != Transport::Ssh {
-                if d.user != "root" { self.doc.set(&t, "user", Val::S(d.user.clone())); }
-                if let Some(p) = &d.password { self.doc.set(&t, "password", Val::S(p.clone())); }
+                if d.user != "root" {
+                    self.doc.set(&t, "user", Val::S(d.user.clone()));
+                }
+                if let Some(p) = &d.password {
+                    self.doc.set(&t, "password", Val::S(p.clone()));
+                }
                 if !d.host.is_empty() {
                     self.doc.set(&t, "host", Val::S(d.host.clone()));
                     self.doc.set(&t, "port", Val::I(d.port as i64));
@@ -169,7 +208,10 @@ impl Config {
         let _ = ensure_dir(&cfg_dir());
         let path = devices_path();
         std::fs::write(&path, self.doc.to_string())?;
-        let _ = std::process::Command::new("chmod").arg("600").arg(&path).status();
+        let _ = std::process::Command::new("chmod")
+            .arg("600")
+            .arg(&path)
+            .status();
         Ok(())
     }
 
@@ -178,7 +220,11 @@ impl Config {
         if let Some(d) = self.devices.get(name) {
             return Pick::Found(d.clone());
         }
-        let hits: Vec<&Device> = self.devices.values().filter(|d| d.name.starts_with(name)).collect();
+        let hits: Vec<&Device> = self
+            .devices
+            .values()
+            .filter(|d| d.name.starts_with(name))
+            .collect();
         match hits.len() {
             0 => Pick::Missing,
             1 => Pick::Found(hits[0].clone()),
@@ -191,13 +237,16 @@ impl Config {
         if let Some(d) = self.devices.get(name) {
             return Some(d.clone());
         }
-        let hits: Vec<&Device> = self.devices.values().filter(|d| d.name.starts_with(name)).collect();
+        let hits: Vec<&Device> = self
+            .devices
+            .values()
+            .filter(|d| d.name.starts_with(name))
+            .collect();
         if hits.len() == 1 {
             return Some(hits[0].clone());
         }
         None
     }
-
 }
 
 // ---------------- 设备指纹 facts ----------------
@@ -222,17 +271,29 @@ pub fn facts_path(dev: &str) -> PathBuf {
 
 pub fn facts_load(dev: &str) -> Facts {
     let doc = Doc::parse(&slurp(&facts_path(dev))).unwrap_or_default();
-    let gs = |k: &str| doc.get("", k).and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+    let gs = |k: &str| {
+        doc.get("", k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    };
     Facts {
         machine_id: gs("machine_id"),
-        macs: doc.get("", "macs").and_then(|v| v.as_arr()).map(|a| a.to_vec()).unwrap_or_default(),
+        macs: doc
+            .get("", "macs")
+            .and_then(|v| v.as_arr())
+            .map(|a| a.to_vec())
+            .unwrap_or_default(),
         cpu_serial: gs("cpu_serial"),
         hostname: gs("hostname"),
         kernel: gs("kernel"),
         arch: gs("arch"),
         os: gs("os"),
         last_ip: gs("last_ip"),
-        last_seen: doc.get("", "last_seen").and_then(|v| v.as_int()).unwrap_or(0),
+        last_seen: doc
+            .get("", "last_seen")
+            .and_then(|v| v.as_int())
+            .unwrap_or(0),
     }
 }
 
@@ -288,7 +349,9 @@ pub struct State {
 impl State {
     pub fn load() -> State {
         let _ = ensure_dir(&cfg_dir());
-        State { doc: Doc::parse(&slurp(&state_path())).unwrap_or_default() }
+        State {
+            doc: Doc::parse(&slurp(&state_path())).unwrap_or_default(),
+        }
     }
     pub fn save(&self) {
         let _ = std::fs::write(state_path(), self.doc.to_string());
@@ -300,9 +363,23 @@ impl State {
             let t = format!("fwd.{}", id);
             out.push(FwdEntry {
                 id: id.clone(),
-                dev: self.doc.get(&t, "dev").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                spec: self.doc.get(&t, "spec").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                added: self.doc.get(&t, "added").and_then(|v| v.as_int()).unwrap_or(0),
+                dev: self
+                    .doc
+                    .get(&t, "dev")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                spec: self
+                    .doc
+                    .get(&t, "spec")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                added: self
+                    .doc
+                    .get(&t, "added")
+                    .and_then(|v| v.as_int())
+                    .unwrap_or(0),
             });
         }
         out
@@ -326,10 +403,17 @@ impl State {
     }
 
     pub fn get_int(&self, table: &str, key: &str) -> i64 {
-        self.doc.get(table, key).and_then(|v| v.as_int()).unwrap_or(0)
+        self.doc
+            .get(table, key)
+            .and_then(|v| v.as_int())
+            .unwrap_or(0)
     }
     pub fn get_str(&self, table: &str, key: &str) -> String {
-        self.doc.get(table, key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+        self.doc
+            .get(table, key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
     }
     pub fn set_int(&mut self, table: &str, key: &str, v: i64) {
         self.doc.set(table, key, Val::I(v));

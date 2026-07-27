@@ -178,7 +178,8 @@ pub fn parse(buf: &[u8]) -> Option<Parsed> {
             1 => {
                 // A
                 if let Some(d) = r.take(4) {
-                    out.a.insert(name, format!("{}.{}.{}.{}", d[0], d[1], d[2], d[3]));
+                    out.a
+                        .insert(name, format!("{}.{}.{}.{}", d[0], d[1], d[2], d[3]));
                 }
             }
             12 => {
@@ -298,7 +299,11 @@ mod tests {
         assert_eq!(&q[13..17], b"_ssh");
         let tail = &q[q.len() - 4..];
         assert_eq!(u16::from_be_bytes([tail[0], tail[1]]), 12, "QTYPE=PTR");
-        assert_eq!(u16::from_be_bytes([tail[2], tail[3]]), 0x8001, "QU 位要置上");
+        assert_eq!(
+            u16::from_be_bytes([tail[2], tail[3]]),
+            0x8001,
+            "QU 位要置上"
+        );
     }
 
     /// 手搓一个应答包：A + SRV，SRV 的 target 用压缩指针指回 A 的名字。
@@ -335,7 +340,10 @@ mod tests {
     #[test]
     fn parses_a_and_compressed_srv() {
         let p = parse(&fake_response()).expect("应该解得开");
-        assert_eq!(p.a.get("rk3588.local").map(|s| s.as_str()), Some("192.168.1.37"));
+        assert_eq!(
+            p.a.get("rk3588.local").map(|s| s.as_str()),
+            Some("192.168.1.37")
+        );
         let (target, port) = p.srv.get("board._ssh._tcp.local").expect("有 SRV");
         assert_eq!(target, "rk3588.local", "压缩指针没跟对");
         assert_eq!(*port, 22);

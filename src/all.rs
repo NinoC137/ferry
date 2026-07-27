@@ -52,7 +52,11 @@ pub fn all_cmd(cfg: &Config, filter: &[String], cmd: &str) -> i32 {
             let mut child = match child {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("{} {}", color(&format!("[{}]", d.name)), red(&e.to_string()));
+                    eprintln!(
+                        "{} {}",
+                        color(&format!("[{}]", d.name)),
+                        red(&e.to_string())
+                    );
                     return (d.name, -1);
                 }
             };
@@ -93,7 +97,11 @@ pub fn all_cmd(cfg: &Config, filter: &[String], cmd: &str) -> i32 {
             summary.push(format!(
                 "{} {}",
                 name,
-                if code == 0 { green("✓") } else { red(&format!("✗({})", code)) }
+                if code == 0 {
+                    green("✓")
+                } else {
+                    red(&format!("✗({})", code))
+                }
             ));
         }
     }
@@ -102,7 +110,11 @@ pub fn all_cmd(cfg: &Config, filter: &[String], cmd: &str) -> i32 {
 }
 
 /// `fy all --json`：并行执行并把每台设备的 stdout/stderr/退出码原样收上来。
-pub fn all_json(cfg: &Config, filter: &[String], cmd: &str) -> Result<Vec<(String, i32, String, String)>, String> {
+pub fn all_json(
+    cfg: &Config,
+    filter: &[String],
+    cmd: &str,
+) -> Result<Vec<(String, i32, String, String)>, String> {
     let devs: Vec<_> = cfg
         .devices
         .values()

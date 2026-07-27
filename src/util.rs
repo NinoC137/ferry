@@ -51,14 +51,30 @@ fn paint(code: &str, s: &str) -> String {
     }
 }
 
-pub fn bold(s: &str) -> String { paint("1", s) }
-pub fn dim(s: &str) -> String { paint("2", s) }
-pub fn red(s: &str) -> String { paint("31", s) }
-pub fn green(s: &str) -> String { paint("32", s) }
-pub fn yellow(s: &str) -> String { paint("33", s) }
-pub fn blue(s: &str) -> String { paint("34", s) }
-pub fn magenta(s: &str) -> String { paint("35", s) }
-pub fn cyan(s: &str) -> String { paint("36", s) }
+pub fn bold(s: &str) -> String {
+    paint("1", s)
+}
+pub fn dim(s: &str) -> String {
+    paint("2", s)
+}
+pub fn red(s: &str) -> String {
+    paint("31", s)
+}
+pub fn green(s: &str) -> String {
+    paint("32", s)
+}
+pub fn yellow(s: &str) -> String {
+    paint("33", s)
+}
+pub fn blue(s: &str) -> String {
+    paint("34", s)
+}
+pub fn magenta(s: &str) -> String {
+    paint("35", s)
+}
+pub fn cyan(s: &str) -> String {
+    paint("36", s)
+}
 
 pub fn info(msg: &str) {
     if !QUIET.load(Ordering::Relaxed) {
@@ -134,7 +150,11 @@ pub fn print_table(header: &[&str], rows: &[Vec<String>]) {
         }
         out
     };
-    let head: Vec<String> = header.iter().enumerate().map(|(i, h)| pad(&bold(h), w[i])).collect();
+    let head: Vec<String> = header
+        .iter()
+        .enumerate()
+        .map(|(i, h)| pad(&bold(h), w[i]))
+        .collect();
     println!("{}", head.join("  "));
     for r in rows {
         let line: Vec<String> = r.iter().enumerate().map(|(i, c)| pad(c, w[i])).collect();
@@ -145,7 +165,10 @@ pub fn print_table(header: &[&str], rows: &[Vec<String>]) {
 // ---------------- 命令执行 ----------------
 
 pub fn shell_quote(s: &str) -> String {
-    if !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || "_-./=:@,+%".contains(c)) {
+    if !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || "_-./=:@,+%".contains(c))
+    {
         s.to_string()
     } else {
         format!("'{}'", s.replace('\'', "'\\''"))
@@ -153,7 +176,10 @@ pub fn shell_quote(s: &str) -> String {
 }
 
 pub fn render_cmd(argv: &[String]) -> String {
-    argv.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ")
+    argv.iter()
+        .map(|a| shell_quote(a))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn announce(argv: &[String]) {
@@ -179,7 +205,11 @@ pub struct Output {
 pub fn run_capture(argv: &[String], envs: &[(String, String)]) -> io::Result<Output> {
     announce(argv);
     if dry() {
-        return Ok(Output { status: 0, stdout: String::new(), stderr: String::new() });
+        return Ok(Output {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        });
     }
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..]);
@@ -244,7 +274,9 @@ pub fn argv(items: &[&str]) -> Vec<String> {
 // ---------------- 路径 ----------------
 
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
 /// 配置根目录 ~/.config/ferry（可用 FERRY_HOME 覆盖）。
@@ -263,12 +295,24 @@ pub fn ensure_dir(p: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn state_path() -> PathBuf { cfg_dir().join("state.toml") }
-pub fn devices_path() -> PathBuf { cfg_dir().join("devices.toml") }
-pub fn facts_dir() -> PathBuf { cfg_dir().join("facts") }
-pub fn cm_dir() -> PathBuf { cfg_dir().join("cm") }
-pub fn bb_dir() -> PathBuf { cfg_dir().join("bb") }
-pub fn known_hosts() -> PathBuf { cfg_dir().join("known_hosts") }
+pub fn state_path() -> PathBuf {
+    cfg_dir().join("state.toml")
+}
+pub fn devices_path() -> PathBuf {
+    cfg_dir().join("devices.toml")
+}
+pub fn facts_dir() -> PathBuf {
+    cfg_dir().join("facts")
+}
+pub fn cm_dir() -> PathBuf {
+    cfg_dir().join("cm")
+}
+pub fn bb_dir() -> PathBuf {
+    cfg_dir().join("bb")
+}
+pub fn known_hosts() -> PathBuf {
+    cfg_dir().join("known_hosts")
+}
 
 // ---------------- 交互 ----------------
 
@@ -313,7 +357,10 @@ pub fn pick(msg: &str, items: &[String]) -> Option<usize> {
         eprintln!("  {} {}", dim(&format!("{})", i + 1)), it);
     }
     let a = prompt(msg);
-    a.parse::<usize>().ok().filter(|n| *n >= 1 && *n <= items.len()).map(|n| n - 1)
+    a.parse::<usize>()
+        .ok()
+        .filter(|n| *n >= 1 && *n <= items.len())
+        .map(|n| n - 1)
 }
 
 // ---------------- 杂项 ----------------
@@ -347,12 +394,22 @@ pub fn notify(title: &str, body: &str) {
             osa_quote(body),
             osa_quote(title)
         );
-        let _ = Command::new("osascript").arg("-e").arg(script).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     #[cfg(not(target_os = "macos"))]
     {
         if which("notify-send").is_some() {
-            let _ = Command::new("notify-send").arg(title).arg(body).stdout(Stdio::null()).stderr(Stdio::null()).status();
+            let _ = Command::new("notify-send")
+                .arg(title)
+                .arg(body)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
         }
     }
 }
@@ -370,7 +427,10 @@ pub fn spawn_daemon(argv: &[String], log: &Path) -> io::Result<i32> {
     if dry() {
         return Ok(0);
     }
-    let logf = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+    let logf = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)?;
     let logf2 = logf.try_clone()?;
     // setsid 存在就用它脱离控制终端（Linux 有；macOS 默认无，退回直接 spawn）
     let use_setsid = which("setsid").is_some();
@@ -383,7 +443,9 @@ pub fn spawn_daemon(argv: &[String], log: &Path) -> io::Result<i32> {
         c.args(&argv[1..]);
         c
     };
-    cmd.stdin(Stdio::null()).stdout(Stdio::from(logf)).stderr(Stdio::from(logf2));
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::from(logf))
+        .stderr(Stdio::from(logf2));
     let child = cmd.spawn()?;
     let pid = child.id() as i32;
     // 不 wait —— 让它继续在后台跑；std 不会在 drop 时杀子进程
@@ -409,7 +471,11 @@ pub fn pid_alive(pid: i32) -> bool {
 
 pub fn kill_pid(pid: i32) {
     if pid > 0 {
-        let _ = Command::new("kill").arg(pid.to_string()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = Command::new("kill")
+            .arg(pid.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 
@@ -422,7 +488,6 @@ pub fn slurp(p: &Path) -> String {
 pub fn self_exe() -> PathBuf {
     std::env::current_exe().unwrap_or_else(|_| PathBuf::from("fy"))
 }
-
 
 // ---------------- 人类可读的量 ----------------
 
@@ -556,7 +621,12 @@ impl Progress {
                 eta
             )
         } else {
-            format!("{} {} {}", self.label, human_bytes(self.done), human_rate(rate))
+            format!(
+                "{} {} {}",
+                self.label,
+                human_bytes(self.done),
+                human_rate(rate)
+            )
         };
         eprint!("\r\x1b[2K{}", dim(&body));
         let _ = io::stderr().flush();

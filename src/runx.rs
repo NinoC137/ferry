@@ -9,11 +9,20 @@ use crate::util::*;
 use std::path::Path;
 
 fn remote_bin_path(d: &Device, local: &Path) -> String {
-    let base = local.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "a.out".into());
+    let base = local
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "a.out".into());
     format!("{}/{}", d.dest.trim_end_matches('/'), base)
 }
 
-pub fn run(cfg: &Config, d: &Device, local: &Path, args: &[String], tty: bool) -> std::io::Result<i32> {
+pub fn run(
+    cfg: &Config,
+    d: &Device,
+    local: &Path,
+    args: &[String],
+    tty: bool,
+) -> std::io::Result<i32> {
     if !local.exists() && !dry() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -26,14 +35,25 @@ pub fn run(cfg: &Config, d: &Device, local: &Path, args: &[String], tty: bool) -
         Transport::Ssh => sshx::push(d, local, &d.dest)?,
         Transport::Adb => adbx::push(d, local, &rpath)?,
         Transport::Serial => {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "串口推不了文件，先 fy up"))
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "串口推不了文件，先 fy up",
+            ))
         }
     };
     if !pushed && !dry() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "推送失败"));
     }
-    let argstr = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
-    let cmd = format!("chmod +x {p} && {p} {a}", p = shell_quote(&rpath), a = argstr);
+    let argstr = args
+        .iter()
+        .map(|a| shell_quote(a))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cmd = format!(
+        "chmod +x {p} && {p} {a}",
+        p = shell_quote(&rpath),
+        a = argstr
+    );
     info(&format!("运行: {} {}", rpath, argstr));
     let code = match d.transport {
         Transport::Ssh => sshx::exec_inherit(d, &cmd, tty)?,
@@ -49,7 +69,13 @@ pub fn run(cfg: &Config, d: &Device, local: &Path, args: &[String], tty: bool) -
     Ok(code)
 }
 
-pub fn debug(cfg: &Config, d: &Device, local: &Path, args: &[String], port: u16) -> std::io::Result<i32> {
+pub fn debug(
+    cfg: &Config,
+    d: &Device,
+    local: &Path,
+    args: &[String],
+    port: u16,
+) -> std::io::Result<i32> {
     // 板上有 gdbserver 吗
     let probe = "command -v gdbserver >/dev/null 2>&1 && echo yes || echo no";
     let has = match d.transport {
@@ -81,7 +107,11 @@ pub fn debug(cfg: &Config, d: &Device, local: &Path, args: &[String], port: u16)
     if let Err(e) = fwd::add(cfg, d, &spec) {
         warn(&format!("转发建立失败（可能已存在）: {}", e));
     }
-    let argstr = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+    let argstr = args
+        .iter()
+        .map(|a| shell_quote(a))
+        .collect::<Vec<_>>()
+        .join(" ");
     println!();
     println!("{}", bold("另开一个终端，用交叉 gdb 连接:"));
     println!(
@@ -94,7 +124,12 @@ pub fn debug(cfg: &Config, d: &Device, local: &Path, args: &[String], port: u16)
     );
     println!();
     info("gdbserver 前台运行中，Ctrl-C 结束调试");
-    let cmd = format!("chmod +x {p} 2>/dev/null; gdbserver :{port} {p} {a}", p = shell_quote(&rpath), port = port, a = argstr);
+    let cmd = format!(
+        "chmod +x {p} 2>/dev/null; gdbserver :{port} {p} {a}",
+        p = shell_quote(&rpath),
+        port = port,
+        a = argstr
+    );
     let code = match d.transport {
         Transport::Ssh => sshx::exec_inherit(d, &cmd, true)?,
         Transport::Adb => adbx::exec_inherit(d, &cmd, true)?,

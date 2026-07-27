@@ -31,7 +31,9 @@ impl Request {
         self.query.get(key).map(|s| s.as_str())
     }
     pub fn is_websocket(&self) -> bool {
-        self.header("upgrade").map(|u| u.eq_ignore_ascii_case("websocket")).unwrap_or(false)
+        self.header("upgrade")
+            .map(|u| u.eq_ignore_ascii_case("websocket"))
+            .unwrap_or(false)
     }
     /// 解析 `Range: bytes=start-[end]`（只支持单区间，够用了）。
     pub fn range(&self, size: u64) -> Option<(u64, u64)> {
@@ -100,7 +102,15 @@ pub fn parse_request(stream: &mut BufReader<TcpStream>) -> Option<Request> {
         stream.read_exact(&mut body).ok()?;
         body_buffered = true;
     }
-    Some(Request { method, path, query, headers, body, content_length, body_buffered })
+    Some(Request {
+        method,
+        path,
+        query,
+        headers,
+        body,
+        content_length,
+        body_buffered,
+    })
 }
 
 fn split_query(raw: &str) -> (String, HashMap<String, String>) {
@@ -161,7 +171,12 @@ fn hexval(c: u8) -> Option<u8> {
 
 // ---------------- 响应 ----------------
 
-pub fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) -> std::io::Result<()> {
+pub fn respond(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+) -> std::io::Result<()> {
     let head = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
         status,
@@ -174,16 +189,36 @@ pub fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &
 }
 
 pub fn ok_json(stream: &mut TcpStream, json: &str) -> std::io::Result<()> {
-    respond(stream, "200 OK", "application/json; charset=utf-8", json.as_bytes())
+    respond(
+        stream,
+        "200 OK",
+        "application/json; charset=utf-8",
+        json.as_bytes(),
+    )
 }
 pub fn ok_html(stream: &mut TcpStream, html: &str) -> std::io::Result<()> {
-    respond(stream, "200 OK", "text/html; charset=utf-8", html.as_bytes())
+    respond(
+        stream,
+        "200 OK",
+        "text/html; charset=utf-8",
+        html.as_bytes(),
+    )
 }
 pub fn not_found(stream: &mut TcpStream) -> std::io::Result<()> {
-    respond(stream, "404 Not Found", "text/plain; charset=utf-8", b"not found")
+    respond(
+        stream,
+        "404 Not Found",
+        "text/plain; charset=utf-8",
+        b"not found",
+    )
 }
 pub fn ok_text(stream: &mut TcpStream, text: &str) -> std::io::Result<()> {
-    respond(stream, "200 OK", "text/plain; charset=utf-8", text.as_bytes())
+    respond(
+        stream,
+        "200 OK",
+        "text/plain; charset=utf-8",
+        text.as_bytes(),
+    )
 }
 pub fn bad(stream: &mut TcpStream, status: &str, msg: &str) -> std::io::Result<()> {
     respond(stream, status, "text/plain; charset=utf-8", msg.as_bytes())

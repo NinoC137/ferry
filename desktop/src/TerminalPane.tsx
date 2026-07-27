@@ -8,11 +8,12 @@ interface TerminalPaneProps {
   tabId: string;
   deviceName: string;
   active: boolean;
+  command?: string;
   onStarted: (tabId: string, sessionId: string) => void;
   onActivity: (message: string) => void;
 }
 
-export function TerminalPane({ tabId, deviceName, active, onStarted, onActivity }: TerminalPaneProps) {
+export function TerminalPane({ tabId, deviceName, active, command, onStarted, onActivity }: TerminalPaneProps) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -67,7 +68,7 @@ export function TerminalPane({ tabId, deviceName, active, onStarted, onActivity 
 
     const start = async () => {
       try {
-        const started = await startTerminal(deviceName, term.cols, term.rows);
+        const started = await startTerminal(deviceName, term.cols, term.rows, command);
         if (disposed) return;
         onStarted(tabId, started.sessionId);
         term.writeln(`\x1b[38;5;110mConnected via ${started.transport.toUpperCase()}\x1b[0m\r\n`);
@@ -136,7 +137,7 @@ export function TerminalPane({ tabId, deviceName, active, onStarted, onActivity 
       terminal.current = null;
       fit.current = null;
     };
-  }, [deviceName, onActivity, onStarted, tabId]);
+  }, [command, deviceName, onActivity, onStarted, tabId]);
 
   useEffect(() => {
     if (!active || !terminal.current || !fit.current) return;

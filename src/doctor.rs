@@ -24,9 +24,19 @@ fn check(name: &str, pass: bool, hint: &str) {
 fn host_doctor(cfg: &Config) {
     println!("{}", bold("主机环境:"));
     let sshv = run_capture(&argv(&["ssh", "-V"]), &[])
-        .map(|o| if o.stderr.is_empty() { o.stdout } else { o.stderr })
+        .map(|o| {
+            if o.stderr.is_empty() {
+                o.stdout
+            } else {
+                o.stderr
+            }
+        })
         .unwrap_or_default();
-    check("ssh 客户端", which("ssh").is_some(), "装 OpenSSH: xcode-select --install / apt install openssh-client");
+    check(
+        "ssh 客户端",
+        which("ssh").is_some(),
+        "装 OpenSSH: xcode-select --install / apt install openssh-client",
+    );
     if !sshv.is_empty() {
         let modern = !sshv.contains("OpenSSH_7") && !sshv.contains("OpenSSH_6");
         check(
@@ -35,15 +45,39 @@ fn host_doctor(cfg: &Config) {
             "OpenSSH >= 8.4 才有 SSH_ASKPASS_REQUIRE，太老的话密码档案不生效",
         );
     }
-    check("adb", which("adb").is_some(), "brew install android-platform-tools / apt install adb（不用 Android 可忽略）");
-    check("stty (串口/raw 模式)", which("stty").is_some(), "系统应自带");
-    check("rsync (增量同步更快)", which("rsync").is_some(), "brew/apt install rsync（没有会退回 tar 管道）");
-    check("ssh-keygen", which("ssh-keygen").is_some(), "免密 (fy keyup) 需要");
+    check(
+        "adb",
+        which("adb").is_some(),
+        "brew install android-platform-tools / apt install adb（不用 Android 可忽略）",
+    );
+    check(
+        "stty (串口/raw 模式)",
+        which("stty").is_some(),
+        "系统应自带",
+    );
+    check(
+        "rsync (增量同步更快)",
+        which("rsync").is_some(),
+        "brew/apt install rsync（没有会退回 tar 管道）",
+    );
+    check(
+        "ssh-keygen",
+        which("ssh-keygen").is_some(),
+        "免密 (fy keyup) 需要",
+    );
 
     let cfgd = cfg_dir();
-    check(&format!("配置目录 {}", cfgd.display()), cfgd.exists() || ensure_dir(&cfgd).is_ok(), "");
+    check(
+        &format!("配置目录 {}", cfgd.display()),
+        cfgd.exists() || ensure_dir(&cfgd).is_ok(),
+        "",
+    );
     println!("\n{}", bold("档案:"));
-    println!("  {} 台设备，devices.toml 在 {}", cfg.devices.len(), devices_path().display());
+    println!(
+        "  {} 台设备，devices.toml 在 {}",
+        cfg.devices.len(),
+        devices_path().display()
+    );
     let st = crate::config::State::load();
     let fwds = st.forwards().len();
     if fwds > 0 {
@@ -85,8 +119,11 @@ fn board_doctor(d: &Device) {
         return;
     }
     let get = |k: &str| -> Option<String> {
-        out.lines()
-            .find_map(|l| l.trim().strip_prefix(&format!("{}:", k)).map(|v| v.trim().to_string()))
+        out.lines().find_map(|l| {
+            l.trim()
+                .strip_prefix(&format!("{}:", k))
+                .map(|v| v.trim().to_string())
+        })
     };
     if let Some(t) = get("T").and_then(|v| v.parse::<i64>().ok()) {
         let drift = (now_epoch() - t).abs();
@@ -97,19 +134,39 @@ fn board_doctor(d: &Device) {
         );
     }
     if let Some(ro) = get("RO") {
-        check("rootfs 可写", ro.trim() == "0", "rootfs 只读挂载：mount -o remount,rw /");
+        check(
+            "rootfs 可写",
+            ro.trim() == "0",
+            "rootfs 只读挂载：mount -o remount,rw /",
+        );
     }
     if let Some(dfp) = get("DF").and_then(|v| v.parse::<i64>().ok()) {
-        check(&format!("rootfs 空间 (已用 {}%)", dfp), dfp < 90, "快满了，清理一下");
+        check(
+            &format!("rootfs 空间 (已用 {}%)", dfp),
+            dfp < 90,
+            "快满了，清理一下",
+        );
     }
     if let Some(dns) = get("DNS").and_then(|v| v.parse::<i64>().ok()) {
-        check("DNS 配置", dns > 0, "没有 nameserver：fy share <dev> 借网时会自动处理，或手动写 /etc/resolv.conf");
+        check(
+            "DNS 配置",
+            dns > 0,
+            "没有 nameserver：fy share <dev> 借网时会自动处理，或手动写 /etc/resolv.conf",
+        );
     }
     if let Some(oom) = get("OOM").and_then(|v| v.parse::<i64>().ok()) {
-        check("无 OOM 记录", oom == 0, &format!("dmesg 里有 {} 条 Out of memory", oom));
+        check(
+            "无 OOM 记录",
+            oom == 0,
+            &format!("dmesg 里有 {} 条 Out of memory", oom),
+        );
     }
     if let Some(s) = get("SSHD") {
-        check("ssh 服务", s.trim() == "1", "没起 dropbear/sshd（串口/adb 板子可忽略）");
+        check(
+            "ssh 服务",
+            s.trim() == "1",
+            "没起 dropbear/sshd（串口/adb 板子可忽略）",
+        );
     }
 }
 
@@ -117,7 +174,8 @@ fn board_doctor(d: &Device) {
 pub fn fix_time(d: &Device) -> Result<(), String> {
     let epoch = now_epoch();
     // date -s @epoch (GNU/busybox 新版) → date -u MMDDhhmmCCYY.ss (busybox 老版/toybox)
-    let out = run_capture(&argv(&["date", "-u", "+%m%d%H%M%Y.%S"]), &[]).map_err(|e| e.to_string())?;
+    let out =
+        run_capture(&argv(&["date", "-u", "+%m%d%H%M%Y.%S"]), &[]).map_err(|e| e.to_string())?;
     let stamp = out.stdout.trim().to_string();
     let cmd = format!(
         "(date -s @{e} >/dev/null 2>&1 || date -u -s @{e} >/dev/null 2>&1 || date -u {s} >/dev/null 2>&1 || su 0 date -u {s} >/dev/null 2>&1) && \
@@ -128,16 +186,25 @@ pub fn fix_time(d: &Device) -> Result<(), String> {
     let o = match d.transport {
         Transport::Ssh => sshx::exec_capture(d, &cmd).map_err(|e| e.to_string())?,
         Transport::Adb => adbx::exec_capture(d, &cmd).map_err(|e| e.to_string())?,
-        Transport::Serial => return Err("串口设备先 fy up 打通网络（或在 console 里手动 date -s）".into()),
+        Transport::Serial => {
+            return Err("串口设备先 fy up 打通网络（或在 console 里手动 date -s）".into())
+        }
     };
     if dry() {
         return Ok(());
     }
     if o.stdout.contains("FERRY_TIME_OK") {
-        ok(&format!("板子时间已同步: {}", o.stdout.replace("FERRY_TIME_OK", "").trim()));
+        ok(&format!(
+            "板子时间已同步: {}",
+            o.stdout.replace("FERRY_TIME_OK", "").trim()
+        ));
         Ok(())
     } else {
-        Err(format!("对时失败（可能没权限）: {} {}", o.stdout.trim(), o.stderr.trim()))
+        Err(format!(
+            "对时失败（可能没权限）: {} {}",
+            o.stdout.trim(),
+            o.stderr.trim()
+        ))
     }
 }
 
@@ -147,17 +214,23 @@ pub fn doctor_json(cfg: &Config, dev: Option<&Device>) -> Vec<(&'static str, cra
     let tool = |name: &str| -> J {
         let path = which(name);
         let ver = path.as_ref().and_then(|_| {
-            run_capture(&argv(&[name, "--version"]), &[])
-                .ok()
-                .map(|o| {
-                    let t = if o.stdout.trim().is_empty() { o.stderr } else { o.stdout };
-                    t.lines().next().unwrap_or("").trim().to_string()
-                })
+            run_capture(&argv(&[name, "--version"]), &[]).ok().map(|o| {
+                let t = if o.stdout.trim().is_empty() {
+                    o.stderr
+                } else {
+                    o.stdout
+                };
+                t.lines().next().unwrap_or("").trim().to_string()
+            })
         });
         J::obj(vec![
             ("name", J::s(name)),
             ("found", J::b(path.is_some())),
-            ("path", path.map(|p| J::s(p.display().to_string())).unwrap_or(J::Null)),
+            (
+                "path",
+                path.map(|p| J::s(p.display().to_string()))
+                    .unwrap_or(J::Null),
+            ),
             ("version", ver.map(J::s).unwrap_or(J::Null)),
         ])
     };
@@ -173,14 +246,27 @@ pub fn doctor_json(cfg: &Config, dev: Option<&Device>) -> Vec<(&'static str, cra
         ),
         (
             "tools",
-            J::arr(vec![tool("ssh"), tool("scp"), tool("ssh-keygen"), tool("adb"), tool("rsync"), tool("stty")]),
+            J::arr(vec![
+                tool("ssh"),
+                tool("scp"),
+                tool("ssh-keygen"),
+                tool("adb"),
+                tool("rsync"),
+                tool("stty"),
+            ]),
         ),
     ];
     if let Some(d) = dev {
         let reach = match d.transport {
-            Transport::Ssh => sshx::exec_capture(d, "echo ok").map(|o| o.status == 0).unwrap_or(false),
+            Transport::Ssh => sshx::exec_capture(d, "echo ok")
+                .map(|o| o.status == 0)
+                .unwrap_or(false),
             Transport::Adb => crate::adbx::probe(d).0,
-            Transport::Serial => d.dev.as_ref().map(|p| std::path::Path::new(p).exists()).unwrap_or(false),
+            Transport::Serial => d
+                .dev
+                .as_ref()
+                .map(|p| std::path::Path::new(p).exists())
+                .unwrap_or(false),
         };
         out.push((
             "device",

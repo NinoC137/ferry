@@ -29,14 +29,38 @@ impl Spec {
         match parts.as_slice() {
             [p] => {
                 let n = port(p)?;
-                Ok(Spec::L { lp: n, rh: "127.0.0.1".into(), rp: n })
+                Ok(Spec::L {
+                    lp: n,
+                    rh: "127.0.0.1".into(),
+                    rp: n,
+                })
             }
             ["D" | "d", p] => Ok(Spec::D { lp: port(p)? }),
-            ["R" | "r", rp, lp] => Ok(Spec::R { rp: port(rp)?, lh: "127.0.0.1".into(), lp: port(lp)? }),
-            ["R" | "r", rp, lh, lp] => Ok(Spec::R { rp: port(rp)?, lh: lh.to_string(), lp: port(lp)? }),
-            ["L" | "l", lp, rh, rp] => Ok(Spec::L { lp: port(lp)?, rh: rh.to_string(), rp: port(rp)? }),
-            [lp, rp] => Ok(Spec::L { lp: port(lp)?, rh: "127.0.0.1".into(), rp: port(rp)? }),
-            [lp, rh, rp] => Ok(Spec::L { lp: port(lp)?, rh: rh.to_string(), rp: port(rp)? }),
+            ["R" | "r", rp, lp] => Ok(Spec::R {
+                rp: port(rp)?,
+                lh: "127.0.0.1".into(),
+                lp: port(lp)?,
+            }),
+            ["R" | "r", rp, lh, lp] => Ok(Spec::R {
+                rp: port(rp)?,
+                lh: lh.to_string(),
+                lp: port(lp)?,
+            }),
+            ["L" | "l", lp, rh, rp] => Ok(Spec::L {
+                lp: port(lp)?,
+                rh: rh.to_string(),
+                rp: port(rp)?,
+            }),
+            [lp, rp] => Ok(Spec::L {
+                lp: port(lp)?,
+                rh: "127.0.0.1".into(),
+                rp: port(rp)?,
+            }),
+            [lp, rh, rp] => Ok(Spec::L {
+                lp: port(lp)?,
+                rh: rh.to_string(),
+                rp: port(rp)?,
+            }),
             _ => Err(bad()),
         }
     }
@@ -76,7 +100,8 @@ pub fn add_opts(cfg: &Config, dev: &Device, spec_str: &str, watch: bool) -> Resu
     match dev.transport {
         Transport::Ssh => {
             sshx::ensure_master(dev).map_err(|e| e.to_string())?;
-            let out = sshx::master_ctl(dev, "forward", &spec.ssh_args()).map_err(|e| e.to_string())?;
+            let out =
+                sshx::master_ctl(dev, "forward", &spec.ssh_args()).map_err(|e| e.to_string())?;
             if out.status != 0 && !dry() {
                 return Err(format!("转发建立失败: {}", out.stderr.trim()));
             }
@@ -96,8 +121,14 @@ pub fn add_opts(cfg: &Config, dev: &Device, spec_str: &str, watch: bool) -> Resu
                 if rh != "127.0.0.1" {
                     return Err("adb forward 只支持板内 127.0.0.1 目标".into());
                 }
-                let o = run_capture(&adbx::adb_argv(dev, &["forward", &format!("tcp:{}", lp), &format!("tcp:{}", rp)]), &[])
-                    .map_err(|e| e.to_string())?;
+                let o = run_capture(
+                    &adbx::adb_argv(
+                        dev,
+                        &["forward", &format!("tcp:{}", lp), &format!("tcp:{}", rp)],
+                    ),
+                    &[],
+                )
+                .map_err(|e| e.to_string())?;
                 if o.status != 0 && !dry() {
                     return Err(format!("adb forward 失败: {}", o.stderr.trim()));
                 }
@@ -107,8 +138,14 @@ pub fn add_opts(cfg: &Config, dev: &Device, spec_str: &str, watch: bool) -> Resu
                 if lh != "127.0.0.1" {
                     return Err("adb reverse 只支持本机 127.0.0.1 目标".into());
                 }
-                let o = run_capture(&adbx::adb_argv(dev, &["reverse", &format!("tcp:{}", rp), &format!("tcp:{}", lp)]), &[])
-                    .map_err(|e| e.to_string())?;
+                let o = run_capture(
+                    &adbx::adb_argv(
+                        dev,
+                        &["reverse", &format!("tcp:{}", rp), &format!("tcp:{}", lp)],
+                    ),
+                    &[],
+                )
+                .map_err(|e| e.to_string())?;
                 if o.status != 0 && !dry() {
                     return Err(format!("adb reverse 失败: {}", o.stderr.trim()));
                 }
@@ -144,10 +181,16 @@ pub fn collect(cfg: &Config) -> Vec<FwdView> {
         let alive = *alive_cache.entry(f.dev.clone()).or_insert_with(|| {
             cfg.devices
                 .get(&f.dev)
-                .map(|d| sshx::master_ctl(d, "check", &[]).map(|o| o.status == 0).unwrap_or(false))
+                .map(|d| {
+                    sshx::master_ctl(d, "check", &[])
+                        .map(|o| o.status == 0)
+                        .unwrap_or(false)
+                })
                 .unwrap_or(false)
         });
-        let human = Spec::parse(&f.spec).map(|s| s.human()).unwrap_or_else(|_| f.spec.clone());
+        let human = Spec::parse(&f.spec)
+            .map(|s| s.human())
+            .unwrap_or_else(|_| f.spec.clone());
         out.push(FwdView {
             id: f.id.clone(),
             dev: f.dev.clone(),
@@ -158,15 +201,26 @@ pub fn collect(cfg: &Config) -> Vec<FwdView> {
             added: f.added,
         });
     }
-    for (kind, args) in [("forward", ["forward", "--list"]), ("reverse", ["reverse", "--list"])] {
+    for (kind, args) in [
+        ("forward", ["forward", "--list"]),
+        ("reverse", ["reverse", "--list"]),
+    ] {
         if let Ok(o) = run_capture(&argv(&["adb", args[0], args[1]]), &[]) {
             for line in o.stdout.lines() {
                 let toks: Vec<&str> = line.split_whitespace().collect();
                 if toks.len() >= 3 {
                     let human = if kind == "forward" {
-                        format!("本机:{} → 板:{}", toks[1].trim_start_matches("tcp:"), toks[2].trim_start_matches("tcp:"))
+                        format!(
+                            "本机:{} → 板:{}",
+                            toks[1].trim_start_matches("tcp:"),
+                            toks[2].trim_start_matches("tcp:")
+                        )
                     } else {
-                        format!("板:{} → 本机:{}", toks[1].trim_start_matches("tcp:"), toks[2].trim_start_matches("tcp:"))
+                        format!(
+                            "板:{} → 本机:{}",
+                            toks[1].trim_start_matches("tcp:"),
+                            toks[2].trim_start_matches("tcp:")
+                        )
                     };
                     let dev = cfg
                         .devices
@@ -212,7 +266,11 @@ pub fn list(cfg: &Config) {
                 } else {
                     red("断(fy watch start 可自动重连)")
                 },
-                if v.added > 0 { human_ago(v.added) } else { String::new() },
+                if v.added > 0 {
+                    human_ago(v.added)
+                } else {
+                    String::new()
+                },
             ]
         })
         .collect();
@@ -237,7 +295,10 @@ pub fn remove(cfg: &Config, id_or_all: &str) {
                 }
                 ok(&format!("已移除 [{}] {}", id, f.spec));
             }
-            None => warn(&format!("没有 [{}] 这条转发（adb 的转发用 adb forward --remove-all 清）", id)),
+            None => warn(&format!(
+                "没有 [{}] 这条转发（adb 的转发用 adb forward --remove-all 清）",
+                id
+            )),
         }
     }
     st.save();
@@ -249,10 +310,38 @@ mod tests {
 
     #[test]
     fn spec_grammar() {
-        assert_eq!(Spec::parse("8080").unwrap(), Spec::L { lp: 8080, rh: "127.0.0.1".into(), rp: 8080 });
-        assert_eq!(Spec::parse("8080:80").unwrap(), Spec::L { lp: 8080, rh: "127.0.0.1".into(), rp: 80 });
-        assert_eq!(Spec::parse("8080:10.0.0.9:80").unwrap(), Spec::L { lp: 8080, rh: "10.0.0.9".into(), rp: 80 });
-        assert_eq!(Spec::parse("R:9000:8000").unwrap(), Spec::R { rp: 9000, lh: "127.0.0.1".into(), lp: 8000 });
+        assert_eq!(
+            Spec::parse("8080").unwrap(),
+            Spec::L {
+                lp: 8080,
+                rh: "127.0.0.1".into(),
+                rp: 8080
+            }
+        );
+        assert_eq!(
+            Spec::parse("8080:80").unwrap(),
+            Spec::L {
+                lp: 8080,
+                rh: "127.0.0.1".into(),
+                rp: 80
+            }
+        );
+        assert_eq!(
+            Spec::parse("8080:10.0.0.9:80").unwrap(),
+            Spec::L {
+                lp: 8080,
+                rh: "10.0.0.9".into(),
+                rp: 80
+            }
+        );
+        assert_eq!(
+            Spec::parse("R:9000:8000").unwrap(),
+            Spec::R {
+                rp: 9000,
+                lh: "127.0.0.1".into(),
+                lp: 8000
+            }
+        );
         assert_eq!(Spec::parse("D:1080").unwrap(), Spec::D { lp: 1080 });
         assert!(Spec::parse("不是端口").is_err());
         assert!(Spec::parse("70000").is_err(), "端口超出 u16 要报错");
@@ -277,6 +366,9 @@ mod tests {
             Spec::parse("R:9000:8000").unwrap().ssh_args(),
             vec!["-R".to_string(), "9000:127.0.0.1:8000".to_string()]
         );
-        assert_eq!(Spec::parse("D:1080").unwrap().ssh_args(), vec!["-D".to_string(), "1080".to_string()]);
+        assert_eq!(
+            Spec::parse("D:1080").unwrap().ssh_args(),
+            vec!["-D".to_string(), "1080".to_string()]
+        );
     }
 }

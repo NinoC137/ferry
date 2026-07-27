@@ -12,7 +12,11 @@ pub fn log_follow(cfg: &Config, d: &Device, save: Option<&str>) -> std::io::Resu
     // 保存的话用 tee（省得自己拆流）
     let wrap = |cmd: Vec<String>| -> Vec<String> {
         match save {
-            Some(f) => argv(&["/bin/sh", "-c", &format!("{} | tee -a {}", render_cmd(&cmd), shell_quote(f))]),
+            Some(f) => argv(&[
+                "/bin/sh",
+                "-c",
+                &format!("{} | tee -a {}", render_cmd(&cmd), shell_quote(f)),
+            ]),
             None => cmd,
         }
     };
@@ -39,7 +43,10 @@ pub fn log_follow(cfg: &Config, d: &Device, save: Option<&str>) -> std::io::Resu
             if crate::blackbox::running_for(&d.name) {
                 let f = crate::blackbox::log_path(&d.name);
                 info(&format!("黑匣子录制中，跟随 {}", f.display()));
-                run_inherit(&argv(&["tail", "-n", "50", "-F", &f.display().to_string()]), &[])
+                run_inherit(
+                    &argv(&["tail", "-n", "50", "-F", &f.display().to_string()]),
+                    &[],
+                )
             } else {
                 info("串口设备直接进 console（fy bb start 可后台持续录）");
                 crate::blackbox::serial_shell(cfg, &d.name).map(|_| 0)
@@ -71,7 +78,10 @@ fn sample_device(d: &Device) -> Sample {
     let out = match out {
         Some(o) if o.status == 0 || !o.stdout.is_empty() => o.stdout,
         _ => {
-            return Sample { ok: false, line: format!("{}  {}", d.name, red("离线")) };
+            return Sample {
+                ok: false,
+                line: format!("{}  {}", d.name, red("离线")),
+            };
         }
     };
     // 解析
@@ -90,7 +100,10 @@ fn sample_device(d: &Device) -> Sample {
         } else if let Some(rest) = line.strip_prefix("MEM ") {
             let t: Vec<&str> = rest.split_whitespace().collect();
             if t.len() == 2 {
-                let (u, tt) = (t[0].parse::<f64>().unwrap_or(0.0), t[1].parse::<f64>().unwrap_or(1.0));
+                let (u, tt) = (
+                    t[0].parse::<f64>().unwrap_or(0.0),
+                    t[1].parse::<f64>().unwrap_or(1.0),
+                );
                 mem = format!("{:3.0}/{:.0}M", u / 1024.0, tt / 1024.0);
             }
         } else if let Some(rest) = line.strip_prefix("TMP ") {
@@ -107,7 +120,11 @@ fn sample_device(d: &Device) -> Sample {
             lav = rest.split_whitespace().next().unwrap_or("--").to_string();
         } else if let Some(rest) = line.strip_prefix("UPT ") {
             if let Ok(s) = rest.trim().parse::<i64>() {
-                upt = if s > 86400 { format!("{}d{}h", s / 86400, (s % 86400) / 3600) } else { format!("{}h{}m", s / 3600, (s % 3600) / 60) };
+                upt = if s > 86400 {
+                    format!("{}d{}h", s / 86400, (s % 86400) / 3600)
+                } else {
+                    format!("{}h{}m", s / 3600, (s % 3600) / 60)
+                };
             }
         }
     }
@@ -130,7 +147,11 @@ fn sample_device(d: &Device) -> Sample {
 /// /proc/stat 两次采样算利用率。
 fn cpu_pct(a: &str, b: &str) -> Option<f64> {
     let parse = |s: &str| -> Option<Vec<u64>> {
-        let v: Vec<u64> = s.split_whitespace().skip(1).filter_map(|x| x.parse().ok()).collect();
+        let v: Vec<u64> = s
+            .split_whitespace()
+            .skip(1)
+            .filter_map(|x| x.parse().ok())
+            .collect();
         if v.len() >= 4 {
             Some(v)
         } else {
@@ -184,7 +205,11 @@ pub fn top(cfg: &Config) {
         }
         // 重绘
         print!("\x1b[2J\x1b[H");
-        println!("{}   {}", bold("ferry top"), dim(&format!("{} 台设备", devs.len())));
+        println!(
+            "{}   {}",
+            bold("ferry top"),
+            dim(&format!("{} 台设备", devs.len()))
+        );
         println!();
         for line in results.lock().unwrap().iter() {
             println!("  {}", line);

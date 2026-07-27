@@ -9,7 +9,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const IGNORES: &[&str] = &[".git", "target", "node_modules", ".DS_Store", "__pycache__", ".cache", "build"];
+const IGNORES: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    ".DS_Store",
+    "__pycache__",
+    ".cache",
+    "build",
+];
 
 fn snapshot(root: &Path, extra_ignores: &[String]) -> BTreeMap<PathBuf, (u64, u64)> {
     let mut m = BTreeMap::new();
@@ -22,7 +30,11 @@ fn snapshot(root: &Path, extra_ignores: &[String]) -> BTreeMap<PathBuf, (u64, u6
         for e in rd.flatten() {
             let p = e.path();
             let name = e.file_name().to_string_lossy().to_string();
-            if IGNORES.contains(&name.as_str()) || extra_ignores.contains(&name) || name.ends_with(".swp") || name.ends_with('~') {
+            if IGNORES.contains(&name.as_str())
+                || extra_ignores.contains(&name)
+                || name.ends_with(".swp")
+                || name.ends_with('~')
+            {
                 continue;
             }
             let md = match e.metadata() {
@@ -133,7 +145,12 @@ pub fn sync_cmd(
     };
 
     // 首次全量
-    info(&format!("首次部署 {} → {}:{}", local.display(), d.name, remote));
+    info(&format!(
+        "首次部署 {} → {}:{}",
+        local.display(),
+        d.name,
+        remote
+    ));
     if deploy(d, local, remote, use_rsync)? {
         ok("部署完成");
         run_hook(d);
@@ -164,7 +181,11 @@ pub fn sync_cmd(
                 "{} 变更: {}{}",
                 cyan("↻"),
                 changed.join(", "),
-                if n_removed > 0 { format!(" (-{} 删除)", n_removed) } else { String::new() }
+                if n_removed > 0 {
+                    format!(" (-{} 删除)", n_removed)
+                } else {
+                    String::new()
+                }
             );
             match deploy(d, local, remote, use_rsync) {
                 Ok(true) => {

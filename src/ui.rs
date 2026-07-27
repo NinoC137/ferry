@@ -18,7 +18,10 @@ const UI_HTML: &str = include_str!("../assets/ui.html");
 
 pub fn run(port: u16, open: bool) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| {
-        err(&format!("绑定 127.0.0.1:{} 失败（端口被占？换 --port）", port));
+        err(&format!(
+            "绑定 127.0.0.1:{} 失败（端口被占？换 --port）",
+            port
+        ));
         e
     })?;
     let url = format!("http://127.0.0.1:{}", port);
@@ -101,7 +104,10 @@ fn handle_terminal(req: Request, stream: TcpStream) -> std::io::Result<()> {
         }
         // shell 结束 → 通知前端
         if let Ok(mut o) = ws_out_r.lock() {
-            let _ = wsutil::ws_write_text(&mut *o, "\r\n\x1b[2m[ferry] 终端会话已结束，刷新页面重开]\x1b[0m\r\n");
+            let _ = wsutil::ws_write_text(
+                &mut *o,
+                "\r\n\x1b[2m[ferry] 终端会话已结束，刷新页面重开]\x1b[0m\r\n",
+            );
             let _ = wsutil::ws_write(&mut *o, 0x8, b""); // Close
         }
     });
@@ -155,7 +161,9 @@ fn extract_num(s: &str, key: &str) -> Option<u32> {
     let after = &s[idx + key.len() + 2..];
     let colon = after.find(':')?;
     let rest = after[colon + 1..].trim_start();
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -169,13 +177,33 @@ fn probe(d: &config::Device) -> (bool, String) {
                 .ok()
                 .map(|a| TcpStream::connect_timeout(&a, Duration::from_millis(400)).is_ok())
                 .unwrap_or(false);
-            (okk, if okk { "在线".into() } else { "不可达".into() })
+            (
+                okk,
+                if okk {
+                    "在线".into()
+                } else {
+                    "不可达".into()
+                },
+            )
         }
         Transport::Adb => adbx::probe(d),
         Transport::Serial => {
-            let exists = d.dev.as_ref().map(|p| std::path::Path::new(p).exists()).unwrap_or(false);
+            let exists = d
+                .dev
+                .as_ref()
+                .map(|p| std::path::Path::new(p).exists())
+                .unwrap_or(false);
             let bb = crate::blackbox::running_for(&d.name);
-            (exists, if bb { "在线+黑匣子".into() } else if exists { "在线".into() } else { "没插".into() })
+            (
+                exists,
+                if bb {
+                    "在线+黑匣子".into()
+                } else if exists {
+                    "在线".into()
+                } else {
+                    "没插".into()
+                },
+            )
         }
     }
 }
@@ -201,7 +229,11 @@ fn devices_json() -> String {
     for d in &devs {
         let f = config::facts_load(&d.name);
         let (online, why) = status.get(&d.name).cloned().unwrap_or((false, "?".into()));
-        let ident = if !f.hostname.is_empty() { f.hostname.clone() } else { f.os.clone() };
+        let ident = if !f.hostname.is_empty() {
+            f.hostname.clone()
+        } else {
+            f.os.clone()
+        };
         items.push(format!(
             "{{\"name\":{},\"transport\":{},\"endpoint\":{},\"online\":{},\"why\":{},\"ident\":{},\"kernel\":{},\"arch\":{},\"mac\":{},\"last_ip\":{},\"last_seen\":{}}}",
             js(&d.name),
@@ -226,7 +258,9 @@ fn state_json() -> String {
     // 转发
     let mut fwds = vec![];
     for f in st.forwards() {
-        let spec = crate::fwd::Spec::parse(&f.spec).map(|s| s.human()).unwrap_or(f.spec.clone());
+        let spec = crate::fwd::Spec::parse(&f.spec)
+            .map(|s| s.human())
+            .unwrap_or(f.spec.clone());
         fwds.push(format!(
             "{{\"id\":{},\"dev\":{},\"spec\":{}}}",
             js(&f.id),
@@ -239,7 +273,9 @@ fn state_json() -> String {
     for name in st.doc.children("bb") {
         let pid = st.get_int(&format!("bb.{}", name), "pid") as i32;
         let alive = pid_alive(pid);
-        let n_inc = std::fs::read_dir(crate::blackbox::incidents_dir(&name)).map(|r| r.count()).unwrap_or(0);
+        let n_inc = std::fs::read_dir(crate::blackbox::incidents_dir(&name))
+            .map(|r| r.count())
+            .unwrap_or(0);
         bbs.push(format!(
             "{{\"dev\":{},\"alive\":{},\"incidents\":{}}}",
             js(&name),
@@ -330,12 +366,23 @@ mod tests {
 
         // --- HTTP: 首页 + /api ---
         let (_h, body) = http_get(port, "/");
-        assert!(body.contains("ferry") && body.contains("xterm"), "首页应含 xterm");
+        assert!(
+            body.contains("ferry") && body.contains("xterm"),
+            "首页应含 xterm"
+        );
         let (_h, dj) = http_get(port, "/api/devices");
-        assert!(dj.contains("\"rk\"") && dj.contains("\"mcu\""), "设备列表: {}", dj);
+        assert!(
+            dj.contains("\"rk\"") && dj.contains("\"mcu\""),
+            "设备列表: {}",
+            dj
+        );
         assert!(dj.contains("\"transport\":\"serial\""), "应含串口设备");
         let (_h, sj) = http_get(port, "/api/state");
-        assert!(sj.contains("forwards") && sj.contains("blackboxes"), "state: {}", sj);
+        assert!(
+            sj.contains("forwards") && sj.contains("blackboxes"),
+            "state: {}",
+            sj
+        );
 
         // --- WebSocket 终端 ---
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -357,7 +404,10 @@ mod tests {
             handshake.push_str(&line);
         }
         assert!(handshake.contains("101"), "应 101 升级: {}", handshake);
-        assert!(handshake.contains(&wsutil::ws_accept(key)), "Accept 键应匹配");
+        assert!(
+            handshake.contains(&wsutil::ws_accept(key)),
+            "Accept 键应匹配"
+        );
 
         // 发一条命令（客户端帧必须 mask）
         std::thread::sleep(Duration::from_millis(400));
@@ -375,7 +425,14 @@ mod tests {
 
     fn http_get(port: u16, path: &str) -> (String, String) {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        s.write_all(format!("GET {} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", path).as_bytes()).unwrap();
+        s.write_all(
+            format!(
+                "GET {} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                path
+            )
+            .as_bytes(),
+        )
+        .unwrap();
         let mut buf = Vec::new();
         s.read_to_end(&mut buf).unwrap();
         let text = String::from_utf8_lossy(&buf);

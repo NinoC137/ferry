@@ -2,6 +2,7 @@
 
 use crate::adbx;
 use crate::config::{Device, Transport};
+use crate::peripheral_brief;
 use crate::sshx;
 use crate::util::{dry, run_capture, shell_quote, Output};
 use std::fs::{self, File};
@@ -15,6 +16,7 @@ pub const SCRIPT: &str = include_str!("../assets/hwprobe.sh");
 pub struct Options {
     pub output_dir: PathBuf,
     pub bundle: bool,
+    pub brief: bool,
     pub keep_remote: bool,
     pub include_identifiers: bool,
     pub max_dt_nodes: Option<u32>,
@@ -24,6 +26,7 @@ pub struct Result {
     pub output_dir: PathBuf,
     pub report: PathBuf,
     pub archive: Option<PathBuf>,
+    pub brief: Option<PathBuf>,
     pub remote_dir: String,
 }
 
@@ -178,6 +181,7 @@ pub fn collect(d: &Device, o: &Options) -> std::result::Result<Result, String> {
             output_dir: o.output_dir.clone(),
             report: o.output_dir.join("hardware.json"),
             archive: o.bundle.then(|| o.output_dir.join("device-tree.tar")),
+            brief: o.brief.then(|| o.output_dir.join("peripherals.md")),
             remote_dir: "<dry-run>".into(),
         });
     }
@@ -194,7 +198,7 @@ pub fn collect(d: &Device, o: &Options) -> std::result::Result<Result, String> {
     let remote_dir = target_dir(d);
     let script = format!("{}/hwprobe.sh", remote_dir);
     let report = format!("{}/hardware.json", remote_dir);
-    let work = (|| -> std::result::Result<Option<PathBuf>, String> {
+    let work = (|| -> std::result::Result<(Option<PathBuf>, Option<PathBuf>), String> {
         upload(d, &remote_dir, &script).map_err(|e| format!("下发采集器失败: {}", e))?;
         let mut command = format!(
             "sh {} collect --out {}",
@@ -222,7 +226,7 @@ pub fn collect(d: &Device, o: &Options) -> std::result::Result<Result, String> {
         download(d, &report, &local_report)
             .map_err(|e| format!("回收 hardware.json 失败: {}", e))?;
         let remote_archive = format!("{}/device-tree.tar", remote_dir);
-        if remote_capture(d, &format!("test -f {}", shell_quote(&remote_archive)))
+        let archive = if remote_capture(d, &format!("test -f {}", shell_quote(&remote_archive)))
             .map_err(|e| e.to_string())?
             .status
             == 0
@@ -230,18 +234,28 @@ pub fn collect(d: &Device, o: &Options) -> std::result::Result<Result, String> {
             let local_archive = o.output_dir.join("device-tree.tar");
             download(d, &remote_archive, &local_archive)
                 .map_err(|e| format!("回收 device-tree.tar 失败: {}", e))?;
-            Ok(Some(local_archive))
+            Some(local_archive)
         } else {
-            Ok(None)
-        }
+            None
+        };
+        let brief = if o.brief {
+            let local_brief = o.output_dir.join("peripherals.md");
+            peripheral_brief::write(&local_report, &local_brief)
+                .map_err(|e| format!("生成外设简报失败: {}", e))?;
+            Some(local_brief)
+        } else {
+            None
+        };
+        Ok((archive, brief))
     })();
     if !o.keep_remote {
         remove_remote(d, &remote_dir);
     }
-    work.map(|archive| Result {
+    work.map(|(archive, brief)| Result {
         output_dir: o.output_dir.clone(),
         report: o.output_dir.join("hardware.json"),
         archive,
+        brief,
         remote_dir,
     })
 }

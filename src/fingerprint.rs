@@ -14,21 +14,27 @@ pub trait Exec {
 pub struct SshExec<'a>(pub &'a Device);
 impl<'a> Exec for SshExec<'a> {
     fn xrun(&mut self, cmd: &str) -> String {
-        sshx::exec_capture(self.0, cmd).map(|o| o.stdout).unwrap_or_default()
+        sshx::exec_capture(self.0, cmd)
+            .map(|o| o.stdout)
+            .unwrap_or_default()
     }
 }
 
 pub struct AdbExec<'a>(pub &'a Device);
 impl<'a> Exec for AdbExec<'a> {
     fn xrun(&mut self, cmd: &str) -> String {
-        adbx::exec_capture(self.0, cmd).map(|o| o.stdout).unwrap_or_default()
+        adbx::exec_capture(self.0, cmd)
+            .map(|o| o.stdout)
+            .unwrap_or_default()
     }
 }
 
 /// 采集身份信息（对 busybox / Android 都友好，全部容错）。
 pub fn collect<E: Exec>(e: &mut E) -> Facts {
     let mut f = Facts::default();
-    f.machine_id = first_line(&e.xrun("cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null"));
+    f.machine_id = first_line(
+        &e.xrun("cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null"),
+    );
     let macs_raw = e.xrun("cat /sys/class/net/*/address 2>/dev/null");
     f.macs = macs_raw
         .lines()
@@ -37,8 +43,10 @@ pub fn collect<E: Exec>(e: &mut E) -> Facts {
         .collect();
     f.macs.sort();
     f.macs.dedup();
-    f.cpu_serial = first_line(&e.xrun("grep -i '^serial' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2"));
-    f.hostname = first_line(&e.xrun("hostname 2>/dev/null || getprop ro.product.model 2>/dev/null"));
+    f.cpu_serial =
+        first_line(&e.xrun("grep -i '^serial' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2"));
+    f.hostname =
+        first_line(&e.xrun("hostname 2>/dev/null || getprop ro.product.model 2>/dev/null"));
     f.kernel = first_line(&e.xrun("uname -r 2>/dev/null"));
     f.arch = first_line(&e.xrun("uname -m 2>/dev/null"));
     let android = e.xrun("getprop ro.build.version.release 2>/dev/null");
@@ -91,7 +99,11 @@ pub fn match_known(mac: Option<&str>, machine_id: Option<&str>) -> Option<String
 /// `fy info <dev>`：身份卡片 + 实时状态。
 pub fn info_card(d: &Device) {
     let f = config::facts_load(&d.name);
-    println!("{}  {}", bold(&d.name), dim(&format!("[{}] {}", d.transport.as_str(), d.endpoint())));
+    println!(
+        "{}  {}",
+        bold(&d.name),
+        dim(&format!("[{}] {}", d.transport.as_str(), d.endpoint()))
+    );
     let mut rows: Vec<Vec<String>> = vec![];
     let mut push = |k: &str, v: String| {
         if !v.is_empty() {
@@ -102,7 +114,11 @@ pub fn info_card(d: &Device) {
     push("内核", f.kernel.clone());
     push("架构", f.arch.clone());
     push("主机名", f.hostname.clone());
-    push("machine-id", f.machine_id.chars().take(16).collect::<String>() + if f.machine_id.len() > 16 { "…" } else { "" });
+    push(
+        "machine-id",
+        f.machine_id.chars().take(16).collect::<String>()
+            + if f.machine_id.len() > 16 { "…" } else { "" },
+    );
     push("CPU 序列号", f.cpu_serial.clone());
     push("MAC", f.macs.join(", "));
     push("最近 IP", f.last_ip.clone());
@@ -114,8 +130,16 @@ pub fn info_card(d: &Device) {
 
     // 实时状态（能连上就顺手看一眼）
     let live = match d.transport {
-        Transport::Ssh => Some(sshx::exec_capture(d, LIVE_CMD).map(|o| o.stdout).unwrap_or_default()),
-        Transport::Adb => Some(adbx::exec_capture(d, LIVE_CMD).map(|o| o.stdout).unwrap_or_default()),
+        Transport::Ssh => Some(
+            sshx::exec_capture(d, LIVE_CMD)
+                .map(|o| o.stdout)
+                .unwrap_or_default(),
+        ),
+        Transport::Adb => Some(
+            adbx::exec_capture(d, LIVE_CMD)
+                .map(|o| o.stdout)
+                .unwrap_or_default(),
+        ),
         Transport::Serial => None,
     };
     if let Some(out) = live {

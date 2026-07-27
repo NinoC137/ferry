@@ -55,7 +55,10 @@ impl Doc {
         self.tables.get(table).and_then(|t| t.get(key))
     }
     pub fn set(&mut self, table: &str, key: &str, v: Val) {
-        self.tables.entry(table.to_string()).or_default().insert(key.to_string(), v);
+        self.tables
+            .entry(table.to_string())
+            .or_default()
+            .insert(key.to_string(), v);
     }
     /// 列出某前缀下的直接子小节名，如 prefix="devices" → ["rk3588", "cam1"]。
     pub fn children(&self, prefix: &str) -> Vec<String> {
@@ -82,14 +85,20 @@ impl Doc {
             }
             if let Some(name) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
                 let name = name.trim();
-                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "._-".contains(c)) {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || "._-".contains(c))
+                {
                     return Err(format!("line {}: bad table name [{}]", ln + 1, name));
                 }
                 cur = name.to_string();
                 doc.tables.entry(cur.clone()).or_default();
                 continue;
             }
-            let eq = line.find('=').ok_or_else(|| format!("line {}: expected key = value", ln + 1))?;
+            let eq = line
+                .find('=')
+                .ok_or_else(|| format!("line {}: expected key = value", ln + 1))?;
             let key = line[..eq].trim().to_string();
             if key.is_empty() || !key.chars().all(|c| c.is_alphanumeric() || "_-".contains(c)) {
                 return Err(format!("line {}: bad key '{}'", ln + 1, key));
@@ -164,11 +173,17 @@ fn parse_val(s: &str) -> Result<Val, String> {
         return Ok(Val::S(parse_basic_string(s)?.0));
     }
     if s.starts_with('\'') {
-        let inner = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')).ok_or("unterminated 'string'")?;
+        let inner = s
+            .strip_prefix('\'')
+            .and_then(|x| x.strip_suffix('\''))
+            .ok_or("unterminated 'string'")?;
         return Ok(Val::S(inner.to_string()));
     }
     if s.starts_with('[') {
-        let inner = s.strip_prefix('[').and_then(|x| x.strip_suffix(']')).ok_or("unterminated array")?;
+        let inner = s
+            .strip_prefix('[')
+            .and_then(|x| x.strip_suffix(']'))
+            .ok_or("unterminated array")?;
         let mut items = vec![];
         let mut rest = inner.trim();
         while !rest.is_empty() {
@@ -267,14 +282,35 @@ baud = 1_500_000
 "#;
         let d = Doc::parse(src).unwrap();
         assert_eq!(d.get("", "top").unwrap().as_str().unwrap(), "level");
-        assert_eq!(d.get("devices.rk3588", "port").unwrap().as_int().unwrap(), 22);
-        assert_eq!(d.get("devices.rk3588", "legacy").unwrap().as_bool().unwrap(), true);
-        assert_eq!(d.get("devices.rk3588", "baud").unwrap().as_int().unwrap(), 1_500_000);
-        assert_eq!(d.get("devices.rk3588", "tags").unwrap().as_arr().unwrap(), &["lab".to_string(), "a#b".to_string()]);
-        assert_eq!(d.get("devices.rk3588", "note").unwrap().as_str().unwrap(), "he said \"hi\" # not a comment");
+        assert_eq!(
+            d.get("devices.rk3588", "port").unwrap().as_int().unwrap(),
+            22
+        );
+        assert_eq!(
+            d.get("devices.rk3588", "legacy")
+                .unwrap()
+                .as_bool()
+                .unwrap(),
+            true
+        );
+        assert_eq!(
+            d.get("devices.rk3588", "baud").unwrap().as_int().unwrap(),
+            1_500_000
+        );
+        assert_eq!(
+            d.get("devices.rk3588", "tags").unwrap().as_arr().unwrap(),
+            &["lab".to_string(), "a#b".to_string()]
+        );
+        assert_eq!(
+            d.get("devices.rk3588", "note").unwrap().as_str().unwrap(),
+            "he said \"hi\" # not a comment"
+        );
         assert_eq!(d.children("devices"), vec!["rk3588".to_string()]);
         // 重新序列化再解析应一致
         let d2 = Doc::parse(&d.to_string()).unwrap();
-        assert_eq!(d2.get("devices.rk3588", "note"), d.get("devices.rk3588", "note"));
+        assert_eq!(
+            d2.get("devices.rk3588", "note"),
+            d.get("devices.rk3588", "note")
+        );
     }
 }

@@ -37,7 +37,12 @@ pub struct XferOpts {
 
 impl Default for XferOpts {
     fn default() -> Self {
-        XferOpts { resume: true, verify: true, force: false, skip_same: true }
+        XferOpts {
+            resume: true,
+            verify: true,
+            force: false,
+            skip_same: true,
+        }
     }
 }
 
@@ -106,7 +111,12 @@ pub fn probe_remote(d: &Device, remote: &str) -> std::io::Result<RemoteInfo> {
         q = q
     );
     let out = rexec(d, &cmd)?;
-    let mut info = RemoteInfo { kind: 'n', size: -1, hasher: "none".into(), free_kb: -1 };
+    let mut info = RemoteInfo {
+        kind: 'n',
+        size: -1,
+        hasher: "none".into(),
+        free_kb: -1,
+    };
     for line in out.stdout.lines() {
         let line = line.trim();
         if let Some(v) = line.strip_prefix("T:") {
@@ -160,7 +170,12 @@ fn remote_sha256(d: &Device, hasher: &str, remote: &str, prefix: Option<u64>) ->
 // ---------------- push ----------------
 
 /// 把本地文件/目录送上板子。remote 以 `/` 结尾或本身是目录时，按目录处理。
-pub fn push(d: &Device, local: &Path, remote: &str, o: &XferOpts) -> Result<Vec<FileResult>, String> {
+pub fn push(
+    d: &Device,
+    local: &Path,
+    remote: &str,
+    o: &XferOpts,
+) -> Result<Vec<FileResult>, String> {
     if d.transport == Transport::Serial {
         return Err("串口通道传不了文件，先 `fy up <设备>` 爬升到 ssh".into());
     }
@@ -198,10 +213,19 @@ fn push_one(
     o: &XferOpts,
     shared: &mut Option<Progress>,
 ) -> Result<FileResult, String> {
-    let meta = std::fs::metadata(local).map_err(|e| format!("读不到 {}: {}", local.display(), e))?;
+    let meta =
+        std::fs::metadata(local).map_err(|e| format!("读不到 {}: {}", local.display(), e))?;
     let total = meta.len();
-    let name = local.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    let mut r = FileResult { name: name.clone(), remote: remote.to_string(), total, ..Default::default() };
+    let name = local
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut r = FileResult {
+        name: name.clone(),
+        remote: remote.to_string(),
+        total,
+        ..Default::default()
+    };
 
     if dry() {
         info(&format!(
@@ -232,7 +256,8 @@ fn push_one(
         None
     };
     if !o.force && o.skip_same && info_r.size >= 0 && info_r.size as u64 == total {
-        if let (Some(lh), Some(rh)) = (&local_hash, remote_sha256(d, &info_r.hasher, remote, None)) {
+        if let (Some(lh), Some(rh)) = (&local_hash, remote_sha256(d, &info_r.hasher, remote, None))
+        {
             if *lh == rh {
                 r.skipped = true;
                 r.verified = true;
@@ -244,13 +269,21 @@ fn push_one(
 
     // 能不能续？远端比本地短，且前缀哈希对得上
     let mut offset = 0u64;
-    if o.resume && !o.force && info_r.size > 0 && (info_r.size as u64) < total && info_r.hasher != "none" {
+    if o.resume
+        && !o.force
+        && info_r.size > 0
+        && (info_r.size as u64) < total
+        && info_r.hasher != "none"
+    {
         let off = info_r.size as u64;
         let lp = hash::sha256_file(local, Some(off)).map_err(|e| e.to_string())?;
         match remote_sha256(d, &info_r.hasher, remote, Some(off)) {
             Some(rp) if rp == lp => {
                 offset = off;
-                info(&format!("续传：远端已有 {}，从这里接着传", human_bytes(off)));
+                info(&format!(
+                    "续传：远端已有 {}，从这里接着传",
+                    human_bytes(off)
+                ));
             }
             _ => warn("远端已有部分和本地对不上，全量重传"),
         }
@@ -293,8 +326,7 @@ fn push_one(
                 if after.size as u64 != total {
                     return Err(format!(
                         "远端尺寸对不上（期望 {}，实际 {}）",
-                        total,
-                        after.size
+                        total, after.size
                     ));
                 }
                 warn("板上没有 sha256 工具，只比对了尺寸（装个 busybox 就能全量校验）");
@@ -345,7 +377,8 @@ fn stream_to_remote(
     let mut f = std::fs::File::open(local).map_err(|e| e.to_string())?;
     if offset > 0 {
         use std::io::Seek;
-        f.seek(std::io::SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+        f.seek(std::io::SeekFrom::Start(offset))
+            .map_err(|e| e.to_string())?;
     }
 
     let own_prog = shared.is_none();
@@ -361,7 +394,9 @@ fn stream_to_remote(
     {
         let sin = child.stdin.as_mut().ok_or("拿不到 ssh 的 stdin")?;
         loop {
-            let n = f.read(&mut buf).map_err(|e| format!("读本地文件失败: {}", e))?;
+            let n = f
+                .read(&mut buf)
+                .map_err(|e| format!("读本地文件失败: {}", e))?;
             if n == 0 {
                 break;
             }
@@ -409,7 +444,12 @@ fn push_adb(
     name: String,
 ) -> Result<FileResult, String> {
     let t0 = std::time::Instant::now();
-    let mut r = FileResult { name, remote: remote.to_string(), total, ..Default::default() };
+    let mut r = FileResult {
+        name,
+        remote: remote.to_string(),
+        total,
+        ..Default::default()
+    };
     let info_r = probe_remote(d, remote).map_err(|e| e.to_string())?;
     let local_hash = hash::sha256_file(local, None).map_err(|e| e.to_string())?;
     if !o.force && o.skip_same && info_r.size as u64 == total {
@@ -451,7 +491,11 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, String, u64)>) -> std::
         if ft.is_dir() {
             walk(&p, base, out)?;
         } else if ft.is_file() {
-            let rel = p.strip_prefix(base).unwrap_or(&p).to_string_lossy().replace('\\', "/");
+            let rel = p
+                .strip_prefix(base)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/");
             let sz = e.metadata().map(|m| m.len()).unwrap_or(0);
             out.push((p, rel, sz));
         }
@@ -459,14 +503,22 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, String, u64)>) -> std::
     Ok(())
 }
 
-fn push_dir(d: &Device, local: &Path, remote: &str, o: &XferOpts) -> Result<Vec<FileResult>, String> {
+fn push_dir(
+    d: &Device,
+    local: &Path,
+    remote: &str,
+    o: &XferOpts,
+) -> Result<Vec<FileResult>, String> {
     let mut files = vec![];
     walk(local, local, &mut files).map_err(|e| format!("遍历本地目录失败: {}", e))?;
     if files.is_empty() {
         return Err(format!("{} 里没有文件", local.display()));
     }
     files.sort_by(|a, b| a.1.cmp(&b.1));
-    let base = local.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let base = local
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     // rsync 语义，看的是**本地**路径的尾巴：
     //   fy push rk ./app  /opt/   → /opt/app/...   （建同名子目录）
     //   fy push rk ./app/ /opt/   → /opt/...       （内容直接铺进去）
@@ -484,7 +536,10 @@ fn push_dir(d: &Device, local: &Path, remote: &str, o: &XferOpts) -> Result<Vec<
         d.name,
         root
     ));
-    let mut prog = Some(Progress::new(&format!("{} ({} 个文件)", base, files.len()), grand));
+    let mut prog = Some(Progress::new(
+        &format!("{} ({} 个文件)", base, files.len()),
+        grand,
+    ));
     let mut results = vec![];
     let mut done_bytes = 0u64;
     for (p, rel, sz) in &files {
@@ -514,13 +569,27 @@ fn push_dir(d: &Device, local: &Path, remote: &str, o: &XferOpts) -> Result<Vec<
 
 // ---------------- pull ----------------
 
-pub fn pull(d: &Device, remote: &str, local: &Path, o: &XferOpts) -> Result<Vec<FileResult>, String> {
+pub fn pull(
+    d: &Device,
+    remote: &str,
+    local: &Path,
+    o: &XferOpts,
+) -> Result<Vec<FileResult>, String> {
     if d.transport == Transport::Serial {
         return Err("串口通道传不了文件，先 `fy up <设备>` 爬升到 ssh".into());
     }
     if dry() {
-        info(&format!("DRY: 拉 {}:{} → {}", d.name, remote, local.display()));
-        return Ok(vec![FileResult { name: remote.to_string(), remote: remote.to_string(), ..Default::default() }]);
+        info(&format!(
+            "DRY: 拉 {}:{} → {}",
+            d.name,
+            remote,
+            local.display()
+        ));
+        return Ok(vec![FileResult {
+            name: remote.to_string(),
+            remote: remote.to_string(),
+            ..Default::default()
+        }]);
     }
     let info_r = probe_remote(d, remote).map_err(|e| format!("探测远端失败: {}", e))?;
     match info_r.kind {
@@ -535,7 +604,11 @@ pub fn pull(d: &Device, remote: &str, local: &Path, o: &XferOpts) -> Result<Vec<
 }
 
 fn resolve_pull_dest(remote: &str, local: &Path) -> PathBuf {
-    let base = remote.trim_end_matches('/').rsplit('/').next().unwrap_or("file");
+    let base = remote
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("file");
     if local.is_dir() || local.to_string_lossy().ends_with('/') {
         local.join(base)
     } else {
@@ -553,7 +626,12 @@ fn pull_one(
 ) -> Result<FileResult, String> {
     let total = info_r.size.max(0) as u64;
     let name = remote.rsplit('/').next().unwrap_or(remote).to_string();
-    let mut r = FileResult { name: name.clone(), remote: remote.to_string(), total, ..Default::default() };
+    let mut r = FileResult {
+        name: name.clone(),
+        remote: remote.to_string(),
+        total,
+        ..Default::default()
+    };
     let t0 = std::time::Instant::now();
 
     if let Some(parent) = local.parent() {
@@ -599,7 +677,10 @@ fn pull_one(
             match remote_sha256(d, &info_r.hasher, remote, Some(have)) {
                 Some(rp) if rp == lp => {
                     offset = have;
-                    info(&format!("续传：本地已有 {}，从这里接着拉", human_bytes(have)));
+                    info(&format!(
+                        "续传：本地已有 {}，从这里接着拉",
+                        human_bytes(have)
+                    ));
                 }
                 _ => warn("本地已有部分和板上对不上，全量重拉"),
             }
@@ -632,9 +713,13 @@ fn pull_one(
         .map_err(|e| format!("起 ssh 失败: {}", e))?;
 
     let mut f = if offset > 0 {
-        std::fs::OpenOptions::new().append(true).open(local).map_err(|e| e.to_string())?
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(local)
+            .map_err(|e| e.to_string())?
     } else {
-        std::fs::File::create(local).map_err(|e| format!("建不了本地文件 {}: {}", local.display(), e))?
+        std::fs::File::create(local)
+            .map_err(|e| format!("建不了本地文件 {}: {}", local.display(), e))?
     };
 
     let own_prog = shared.is_none();
@@ -650,11 +735,14 @@ fn pull_one(
         let sout = child.stdout.as_mut().ok_or("拿不到 ssh 的 stdout")?;
         let mut buf = vec![0u8; CHUNK];
         loop {
-            let n = sout.read(&mut buf).map_err(|e| format!("读远端流失败: {}", e))?;
+            let n = sout
+                .read(&mut buf)
+                .map_err(|e| format!("读远端流失败: {}", e))?;
             if n == 0 {
                 break;
             }
-            f.write_all(&buf[..n]).map_err(|e| format!("写本地文件失败: {}", e))?;
+            f.write_all(&buf[..n])
+                .map_err(|e| format!("写本地文件失败: {}", e))?;
             sent += n as u64;
             if let Some(p) = shared.as_mut() {
                 p.add(n as u64);
@@ -670,7 +758,10 @@ fn pull_one(
         *shared = None;
     }
     if !out.status.success() {
-        return Err(format!("远端读取失败: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "远端读取失败: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     r.sent = sent;
     r.resumed_from = offset;
@@ -691,7 +782,10 @@ fn pull_one(
                 // 没有哈希工具就退化成尺寸比对——但要真的比，不能只是嘴上说说
                 let got = std::fs::metadata(local).map(|m| m.len()).unwrap_or(0);
                 if got != total {
-                    return Err(format!("拉下来的尺寸对不上（板上 {}，本地 {}）", total, got));
+                    return Err(format!(
+                        "拉下来的尺寸对不上（板上 {}，本地 {}）",
+                        total, got
+                    ));
                 }
                 warn("板上没有 sha256 工具，只比对了尺寸（装个 busybox 就能全量校验）");
             }
@@ -700,14 +794,27 @@ fn pull_one(
     Ok(r)
 }
 
-fn pull_dir(d: &Device, remote: &str, local: &Path, o: &XferOpts) -> Result<Vec<FileResult>, String> {
+fn pull_dir(
+    d: &Device,
+    remote: &str,
+    local: &Path,
+    o: &XferOpts,
+) -> Result<Vec<FileResult>, String> {
     let rq = shell_quote(remote);
     // find 打不出来就退回 ls -R 不值当；直接报错让用户点名文件更清楚
     let out = rexec(d, &format!("find {} -type f 2>/dev/null | head -20000", rq))
         .map_err(|e| e.to_string())?;
-    let list: Vec<String> = out.stdout.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    let list: Vec<String> = out
+        .stdout
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
     if list.is_empty() {
-        return Err(format!("{} 下没找到文件（板上有 find 吗？没有的话点名单个文件拉）", remote));
+        return Err(format!(
+            "{} 下没找到文件（板上有 find 吗？没有的话点名单个文件拉）",
+            remote
+        ));
     }
     let root = remote.trim_end_matches('/');
     let dirname = root.rsplit('/').next().unwrap_or("pulled");
@@ -721,15 +828,28 @@ fn pull_dir(d: &Device, remote: &str, local: &Path, o: &XferOpts) -> Result<Vec<
     // 一次问全所有尺寸，省掉 N 次往返
     let sizes = remote_sizes(d, &list);
     let grand: u64 = sizes.iter().map(|(_, s)| *s).sum();
-    let mut prog = Some(Progress::new(&format!("{} ({} 个文件)", dirname, list.len()), grand));
-    let hasher = probe_remote(d, remote).map(|i| i.hasher).unwrap_or_else(|_| "none".into());
+    let mut prog = Some(Progress::new(
+        &format!("{} ({} 个文件)", dirname, list.len()),
+        grand,
+    ));
+    let hasher = probe_remote(d, remote)
+        .map(|i| i.hasher)
+        .unwrap_or_else(|_| "none".into());
 
     let mut results = vec![];
     let mut done = 0u64;
     for (rpath, sz) in &sizes {
-        let rel = rpath.strip_prefix(root).unwrap_or(rpath).trim_start_matches('/');
+        let rel = rpath
+            .strip_prefix(root)
+            .unwrap_or(rpath)
+            .trim_start_matches('/');
         let dest = localroot.join(rel);
-        let ri = RemoteInfo { kind: 'f', size: *sz as i64, hasher: hasher.clone(), free_kb: -1 };
+        let ri = RemoteInfo {
+            kind: 'f',
+            size: *sz as i64,
+            hasher: hasher.clone(),
+            free_kb: -1,
+        };
         let mut one = match pull_one(d, rpath, &dest, o, &ri, &mut prog) {
             Ok(r) => r,
             Err(e) => {
@@ -789,7 +909,12 @@ fn remote_sizes(d: &Device, paths: &[String]) -> Vec<(String, u64)> {
 
 /// A 板 → B 板，**流不落主机磁盘**：`ssh A cat f | ssh B 'cat > f'`。
 /// 主机只当中继，两边都不需要能互相看见。
-pub fn device_to_device(src: &Device, src_path: &str, dst: &Device, dst_path: &str) -> Result<u64, String> {
+pub fn device_to_device(
+    src: &Device,
+    src_path: &str,
+    dst: &Device,
+    dst_path: &str,
+) -> Result<u64, String> {
     if src.transport == Transport::Serial || dst.transport == Transport::Serial {
         return Err("串口通道不参与板↔板直传".into());
     }
@@ -801,7 +926,10 @@ pub fn device_to_device(src: &Device, src_path: &str, dst: &Device, dst_path: &s
             a.push(format!("cat {}", shell_quote(src_path)));
             a
         }
-        Transport::Adb => adbx::adb_argv(src, &["exec-out", &format!("cat {}", shell_quote(src_path))]),
+        Transport::Adb => adbx::adb_argv(
+            src,
+            &["exec-out", &format!("cat {}", shell_quote(src_path))],
+        ),
         Transport::Serial => unreachable!(),
     };
     let writer: Vec<String> = match dst.transport {
@@ -815,7 +943,9 @@ pub fn device_to_device(src: &Device, src_path: &str, dst: &Device, dst_path: &s
             ));
             a
         }
-        Transport::Adb => adbx::adb_argv(dst, &["shell", &format!("cat > {}", shell_quote(dst_path))]),
+        Transport::Adb => {
+            adbx::adb_argv(dst, &["shell", &format!("cat > {}", shell_quote(dst_path))])
+        }
         Transport::Serial => unreachable!(),
     };
 
@@ -859,7 +989,8 @@ pub fn device_to_device(src: &Device, src_path: &str, dst: &Device, dst_path: &s
             if n == 0 {
                 break;
             }
-            win.write_all(&buf[..n]).map_err(|e| format!("写目标端失败: {}", e))?;
+            win.write_all(&buf[..n])
+                .map_err(|e| format!("写目标端失败: {}", e))?;
             moved += n as u64;
             prog.add(n as u64);
         }
@@ -869,10 +1000,16 @@ pub fn device_to_device(src: &Device, src_path: &str, dst: &Device, dst_path: &s
     let ro = rchild.wait_with_output().map_err(|e| e.to_string())?;
     let wo = wchild.wait_with_output().map_err(|e| e.to_string())?;
     if !ro.status.success() {
-        return Err(format!("读源端失败: {}", String::from_utf8_lossy(&ro.stderr).trim()));
+        return Err(format!(
+            "读源端失败: {}",
+            String::from_utf8_lossy(&ro.stderr).trim()
+        ));
     }
     if !wo.status.success() {
-        return Err(format!("写目标端失败: {}", String::from_utf8_lossy(&wo.stderr).trim()));
+        return Err(format!(
+            "写目标端失败: {}",
+            String::from_utf8_lossy(&wo.stderr).trim()
+        ));
     }
     Ok(moved)
 }
@@ -885,7 +1022,10 @@ mod tests {
     fn picks_hash_out_of_noisy_output() {
         let h = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
         assert_eq!(extract_sha256(&format!("{}  /tmp/x\n", h)).unwrap(), h);
-        assert_eq!(extract_sha256(&format!("SHA256(/tmp/x)= {}", h)).unwrap(), h);
+        assert_eq!(
+            extract_sha256(&format!("SHA256(/tmp/x)= {}", h)).unwrap(),
+            h
+        );
         assert_eq!(extract_sha256("no hash here"), None);
         // 短的十六进制串不能误判成哈希
         assert_eq!(extract_sha256("deadbeef /tmp/x"), None);
@@ -924,7 +1064,10 @@ mod tests {
         // 这里只验证路径拼接规则本身（真正的传输由集成测试跑）
         let join = |local: &str, remote: &str| -> String {
             let p = Path::new(local);
-            let base = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let base = p
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             if local.ends_with('/') {
                 remote.trim_end_matches('/').to_string()
             } else {

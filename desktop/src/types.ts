@@ -38,6 +38,13 @@ export interface TerminalStarted {
   transport: Transport;
   wsUrl: string;
 }
+export interface OperationResult { ok: boolean; detail: string; }
+export interface TransferRequest { name: string; direction: "push" | "pull"; local: string; remote: string; force: boolean; resume: boolean; verify: boolean; }
+export interface ForwardView { id: string; device: string; channel: string; detail: string; alive: boolean; }
+export interface TopRow { name: string; online: boolean; cpu: string; memory: string; temperature: string; load: string; }
+export interface BlackboxView { name: string; running: boolean; incidents: number; logPath: string; }
+export interface WorkflowPlan { kind: string; device: string; preflightOk: boolean; preflight: string; steps: string[]; rollback: string; }
+export interface WorkflowRequest { kind: string; device: string; nat: boolean; persist: boolean; bootOk: boolean; mode: string; confirmed: boolean; }
 
 export const newDevice = (): DeviceForm => ({
   name: "new-board",

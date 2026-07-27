@@ -53,7 +53,13 @@ pub struct Pty {
 
 impl Pty {
     /// 起一条 PTY，运行给定程序（通常是登录 shell）。
-    pub fn spawn(program: &str, args: &[&str], rows: u16, cols: u16, env: &[(String, String)]) -> std::io::Result<Pty> {
+    pub fn spawn(
+        program: &str,
+        args: &[&str],
+        rows: u16,
+        cols: u16,
+        env: &[(String, String)],
+    ) -> std::io::Result<Pty> {
         unsafe {
             let m = posix_openpt(sys::O_RDWR | sys::O_NOCTTY);
             if m < 0 {
@@ -61,26 +67,42 @@ impl Pty {
             }
             if grantpt(m) != 0 || unlockpt(m) != 0 {
                 close(m);
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "grantpt/unlockpt 失败"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "grantpt/unlockpt 失败",
+                ));
             }
             let name_ptr = ptsname(m);
             if name_ptr.is_null() {
                 close(m);
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "ptsname 失败"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "ptsname 失败",
+                ));
             }
             let mut len = 0usize;
             while *name_ptr.add(len) != 0 {
                 len += 1;
             }
-            let sname = String::from_utf8_lossy(std::slice::from_raw_parts(name_ptr as *const u8, len)).into_owned();
+            let sname =
+                String::from_utf8_lossy(std::slice::from_raw_parts(name_ptr as *const u8, len))
+                    .into_owned();
 
             // 初始窗口大小
-            let ws = Winsize { row: rows.max(1), col: cols.max(1), xpixel: 0, ypixel: 0 };
+            let ws = Winsize {
+                row: rows.max(1),
+                col: cols.max(1),
+                xpixel: 0,
+                ypixel: 0,
+            };
             ioctl(m, sys::TIOCSWINSZ, &ws as *const _);
 
             // 每个 stdio 一份独立 owned fd（try_clone 各自 dup），交给 Command；
             // 满足 Rust IO 安全（不手搓 raw fd 的重复关闭）。
-            let slave = std::fs::OpenOptions::new().read(true).write(true).open(&sname)?;
+            let slave = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&sname)?;
             let s_in = slave.try_clone()?;
             let s_out = slave.try_clone()?;
             let s_err = slave.try_clone()?;
@@ -109,12 +131,20 @@ impl Pty {
             drop(slave); // 父进程不再需要 slave（子进程已持有各自的 dup）
 
             let master = File::from_raw_fd(m);
-            Ok(Pty { master, master_fd: m, child })
+            Ok(Pty {
+                master,
+                master_fd: m,
+                child,
+            })
         }
     }
 
     /// 用户默认 shell 起一个交互登录会话。
-    pub fn spawn_shell(rows: u16, cols: u16, extra_env: &[(String, String)]) -> std::io::Result<Pty> {
+    pub fn spawn_shell(
+        rows: u16,
+        cols: u16,
+        extra_env: &[(String, String)],
+    ) -> std::io::Result<Pty> {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
         let mut env: Vec<(String, String)> = vec![
             ("TERM".into(), "xterm-256color".into()),
@@ -136,7 +166,12 @@ impl Pty {
 
     /// 调整终端窗口大小（xterm.js resize 时调用）。
     pub fn resize(&self, rows: u16, cols: u16) {
-        let ws = Winsize { row: rows.max(1), col: cols.max(1), xpixel: 0, ypixel: 0 };
+        let ws = Winsize {
+            row: rows.max(1),
+            col: cols.max(1),
+            xpixel: 0,
+            ypixel: 0,
+        };
         unsafe {
             ioctl(self.master_fd, sys::TIOCSWINSZ, &ws as *const _);
         }

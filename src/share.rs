@@ -25,12 +25,17 @@ pub fn enable(
         }
         return enable_nat(cfg, d);
     }
-    let port = proxyd::ensure_running_with(proxyd::current_port(), upstream).map_err(|e| e.to_string())?;
+    let port =
+        proxyd::ensure_running_with(proxyd::current_port(), upstream).map_err(|e| e.to_string())?;
     let up = proxyd::current_upstream();
     match d.transport {
         Transport::Ssh => {
             sshx::ensure_master(d).map_err(|e| e.to_string())?;
-            let spec = crate::fwd::Spec::R { rp: port, lh: "127.0.0.1".into(), lp: port };
+            let spec = crate::fwd::Spec::R {
+                rp: port,
+                lh: "127.0.0.1".into(),
+                lp: port,
+            };
             let args = argv(&["-R", &format!("{}:127.0.0.1:{}", port, port)]);
             let out = sshx::master_ctl(d, "forward", &args).map_err(|e| e.to_string())?;
             if out.status != 0 && !dry() {
@@ -53,8 +58,9 @@ pub fn enable(
             );
             if persist {
                 let script = format!("#!/bin/sh\n{}\n", envs);
-                let okk = sshx::write_remote_file(d, "/etc/profile.d/ferry-proxy.sh", &script, "755")
-                    .map_err(|e| e.to_string())?;
+                let okk =
+                    sshx::write_remote_file(d, "/etc/profile.d/ferry-proxy.sh", &script, "755")
+                        .map_err(|e| e.to_string())?;
                 if okk {
                     ok("已写入板端 /etc/profile.d/ferry-proxy.sh（重新登录生效）");
                 } else {
@@ -68,7 +74,14 @@ pub fn enable(
         }
         Transport::Adb => {
             let o = run_capture(
-                &crate::adbx::adb_argv(d, &["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)]),
+                &crate::adbx::adb_argv(
+                    d,
+                    &[
+                        "reverse",
+                        &format!("tcp:{}", port),
+                        &format!("tcp:{}", port),
+                    ],
+                ),
                 &[],
             )
             .map_err(|e| e.to_string())?;
@@ -86,7 +99,13 @@ pub fn enable(
             ));
             if android_global {
                 let _ = run_inherit(
-                    &crate::adbx::adb_argv(d, &["shell", &format!("settings put global http_proxy 127.0.0.1:{}", port)]),
+                    &crate::adbx::adb_argv(
+                        d,
+                        &[
+                            "shell",
+                            &format!("settings put global http_proxy 127.0.0.1:{}", port),
+                        ],
+                    ),
                     &[],
                 );
                 warn("已设置 Android 全局代理（走 USB 借网）。取消: fy share <dev> --off");
@@ -110,8 +129,12 @@ fn enable_nat(_cfg: &Config, d: &Device) -> Result<(), String> {
         return Err("--nat 需要 ssh 可达的直连板子（USB 网卡/网线直连）".into());
     }
     // 1) 找到通往板子的本机网口与网段
-    let (ifname, subnet) = usbnet::route_iface_for(&d.host)
-        .ok_or_else(|| format!("找不到通往 {} 的本机直连网口（--nat 只适合直连网段）", d.host))?;
+    let (ifname, subnet) = usbnet::route_iface_for(&d.host).ok_or_else(|| {
+        format!(
+            "找不到通往 {} 的本机直连网口（--nat 只适合直连网段）",
+            d.host
+        )
+    })?;
     info(&format!("板子在 {} 网口的 {} 网段", ifname, subnet));
     // 2) 主机开 NAT
     usbnet::nat_enable(&subnet).map_err(|e| e.to_string())?;
@@ -131,7 +154,10 @@ fn enable_nat(_cfg: &Config, d: &Device) -> Result<(), String> {
     st.set_str(&format!("share.{}", d.name), "mode", "nat");
     st.set_str(&format!("share.{}", d.name), "subnet", &subnet);
     st.save();
-    ok(&format!("{} 已获得完整外网（NAT 模式，全协议）。测试: fy sh {} -- ping -c1 223.5.5.5", d.name, d.name));
+    ok(&format!(
+        "{} 已获得完整外网（NAT 模式，全协议）。测试: fy sh {} -- ping -c1 223.5.5.5",
+        d.name, d.name
+    ));
     Ok(())
 }
 
@@ -151,9 +177,21 @@ pub fn disable(cfg: &Config, d: &Device) -> Result<(), String> {
                     let _ = sshx::master_ctl(d, "cancel", &args);
                 }
                 Transport::Adb => {
-                    let _ = run_capture(&crate::adbx::adb_argv(d, &["reverse", "--remove", &format!("tcp:{}", port)]), &[]);
-                    let _ = run_capture(&crate::adbx::adb_argv(d, &["shell", "settings delete global http_proxy"]), &[]);
-                    let _ = run_capture(&crate::adbx::adb_argv(d, &["shell", "settings put global http_proxy :0"]), &[]);
+                    let _ = run_capture(
+                        &crate::adbx::adb_argv(
+                            d,
+                            &["reverse", "--remove", &format!("tcp:{}", port)],
+                        ),
+                        &[],
+                    );
+                    let _ = run_capture(
+                        &crate::adbx::adb_argv(d, &["shell", "settings delete global http_proxy"]),
+                        &[],
+                    );
+                    let _ = run_capture(
+                        &crate::adbx::adb_argv(d, &["shell", "settings put global http_proxy :0"]),
+                        &[],
+                    );
                 }
                 Transport::Serial => {}
             }

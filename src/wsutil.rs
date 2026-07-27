@@ -15,7 +15,12 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
     for chunk in msg.chunks(64) {
         let mut w = [0u32; 80];
         for i in 0..16 {
-            w[i] = u32::from_be_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
         }
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -67,8 +72,16 @@ pub fn base64(data: &[u8]) -> String {
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | (b[2] as u32);
         out.push(B64[((n >> 18) & 63) as usize] as char);
         out.push(B64[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { B64[((n >> 6) & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { B64[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            B64[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -163,7 +176,10 @@ mod tests {
     #[test]
     fn sha1_vectors() {
         assert_eq!(hex(&sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
-        assert_eq!(hex(&sha1(b"abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(
+            hex(&sha1(b"abc")),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
         assert_eq!(
             hex(&sha1(b"The quick brown fox jumps over the lazy dog")),
             "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12"
@@ -182,7 +198,10 @@ mod tests {
     #[test]
     fn ws_accept_rfc6455() {
         // RFC 6455 示例
-        assert_eq!(ws_accept("dGhlIHNhbXBsZSBub25jZQ=="), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+        assert_eq!(
+            ws_accept("dGhlIHNhbXBsZSBub25jZQ=="),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        );
     }
 
     fn hex(b: &[u8]) -> String {

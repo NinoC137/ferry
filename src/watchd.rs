@@ -54,7 +54,10 @@ pub fn start(interval: u64, quiet_if_running: bool) -> Result<i32, String> {
     st.set_int("watch", "interval", interval as i64);
     st.set_int("watch", "started", now_epoch());
     st.save();
-    ok(&format!("隧道保活已开启 (pid {}, 每 {}s 探一次)", pid, interval));
+    ok(&format!(
+        "隧道保活已开启 (pid {}, 每 {}s 探一次)",
+        pid, interval
+    ));
     Ok(pid)
 }
 
@@ -111,7 +114,11 @@ pub fn status() -> WatchStatus {
     };
     for name in st.doc.children("watch") {
         let t = format!("watch.{}", name);
-        s.devices.push((name, st.get_int(&t, "last_ok"), st.get_int(&t, "reconnects")));
+        s.devices.push((
+            name,
+            st.get_int(&t, "last_ok"),
+            st.get_int(&t, "reconnects"),
+        ));
     }
     s
 }
@@ -150,7 +157,9 @@ pub fn daemon_main() -> i32 {
                 Some(d) if d.transport == Transport::Ssh => d.clone(),
                 _ => continue, // adb 的 forward 由 adb server 自己管，不用我们操心
             };
-            let alive = sshx::master_ctl(&d, "check", &[]).map(|o| o.status == 0).unwrap_or(false);
+            let alive = sshx::master_ctl(&d, "check", &[])
+                .map(|o| o.status == 0)
+                .unwrap_or(false);
             if alive {
                 if down.get(&name).copied().unwrap_or(false) {
                     notify("ferry", &format!("{} 的隧道已恢复", name));
@@ -203,7 +212,8 @@ fn reattach(cfg: &Config, d: &Device) -> Result<usize, String> {
             continue;
         }
         if let Ok(spec) = Spec::parse(&f.spec) {
-            let out = sshx::master_ctl(d, "forward", &spec.ssh_args()).map_err(|e| e.to_string())?;
+            let out =
+                sshx::master_ctl(d, "forward", &spec.ssh_args()).map_err(|e| e.to_string())?;
             if out.status == 0 {
                 n += 1;
             }
@@ -213,11 +223,18 @@ fn reattach(cfg: &Config, d: &Device) -> Result<usize, String> {
     let mode = st.get_str(&format!("share.{}", d.name), "mode");
     if mode == "proxy" {
         let port = st.get_int("proxy", "port") as u16;
-        let port = if port == 0 { proxyd::DEFAULT_PORT } else { port };
+        let port = if port == 0 {
+            proxyd::DEFAULT_PORT
+        } else {
+            port
+        };
         // 主机侧的代理进程也可能一起没了，先确保它活着
         let _ = proxyd::ensure_running(port);
         let args = argv(&["-R", &format!("{}:127.0.0.1:{}", port, port)]);
-        if sshx::master_ctl(d, "forward", &args).map(|o| o.status == 0).unwrap_or(false) {
+        if sshx::master_ctl(d, "forward", &args)
+            .map(|o| o.status == 0)
+            .unwrap_or(false)
+        {
             n += 1;
         }
     }

@@ -32,12 +32,18 @@ pub fn exec_capture(d: &Device, cmd: &str) -> std::io::Result<Output> {
 }
 
 pub fn push(d: &Device, local: &Path, remote: &str) -> std::io::Result<bool> {
-    let st = run_inherit(&adb_argv(d, &["push", &local.display().to_string(), remote]), &[])?;
+    let st = run_inherit(
+        &adb_argv(d, &["push", &local.display().to_string(), remote]),
+        &[],
+    )?;
     Ok(st == 0)
 }
 
 pub fn pull(d: &Device, remote: &str, local: &Path) -> std::io::Result<bool> {
-    let st = run_inherit(&adb_argv(d, &["pull", remote, &local.display().to_string()]), &[])?;
+    let st = run_inherit(
+        &adb_argv(d, &["pull", remote, &local.display().to_string()]),
+        &[],
+    )?;
     Ok(st == 0)
 }
 
@@ -88,7 +94,10 @@ pub fn probe(d: &Device) -> (bool, String) {
             if devs.len() == 1 {
                 (true, devs[0].1.clone())
             } else {
-                (false, format!("{} 台设备，请 fy add 时指定 serial", devs.len()))
+                (
+                    false,
+                    format!("{} 台设备，请 fy add 时指定 serial", devs.len()),
+                )
             }
         }
     }
@@ -97,7 +106,10 @@ pub fn probe(d: &Device) -> (bool, String) {
 /// 一键切换到 WiFi adb：取 wlan0 IP → adb tcpip 5555 → adb connect。
 pub fn wifi(cfg: &mut Config, d: &Device) -> std::io::Result<()> {
     info("读取设备 WiFi IP ...");
-    let out = exec_capture(d, "ip -4 addr show wlan0 2>/dev/null || ifconfig wlan0 2>/dev/null")?;
+    let out = exec_capture(
+        d,
+        "ip -4 addr show wlan0 2>/dev/null || ifconfig wlan0 2>/dev/null",
+    )?;
     let ip = extract_ipv4(&out.stdout);
     let ip = match ip {
         Some(ip) => ip,
@@ -114,7 +126,11 @@ pub fn wifi(cfg: &mut Config, d: &Device) -> std::io::Result<()> {
     };
     info(&format!("设备 WiFi IP: {}，切换 tcpip 模式 ...", ip));
     run_inherit(&adb_argv(d, &["tcpip", "5555"]), &[])?;
-    std::thread::sleep(std::time::Duration::from_millis(if dry() { 0 } else { 1200 }));
+    std::thread::sleep(std::time::Duration::from_millis(if dry() {
+        0
+    } else {
+        1200
+    }));
     let ep = format!("{}:5555", ip);
     let st = run_inherit(&argv(&["adb", "connect", &ep]), &[])?;
     if st == 0 && !dry() {
@@ -123,7 +139,10 @@ pub fn wifi(cfg: &mut Config, d: &Device) -> std::io::Result<()> {
             dd.adb_serial = Some(ep.clone());
         }
         cfg.save()?;
-        ok(&format!("{} 已切到 WiFi adb ({})，可以拔掉 USB 线了。恢复 USB: adb usb", d.name, ep));
+        ok(&format!(
+            "{} 已切到 WiFi adb ({})，可以拔掉 USB 线了。恢复 USB: adb usb",
+            d.name, ep
+        ));
     }
     Ok(())
 }
@@ -133,7 +152,14 @@ pub fn extract_ipv4(s: &str) -> Option<String> {
     for tok in s.split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '/')) {
         let ip = tok.split('/').next().unwrap_or("");
         let parts: Vec<&str> = ip.split('.').collect();
-        if parts.len() == 4 && parts.iter().all(|p| !p.is_empty() && p.len() <= 3 && p.chars().all(|c| c.is_ascii_digit()) && p.parse::<u16>().map(|n| n <= 255).unwrap_or(false)) {
+        if parts.len() == 4
+            && parts.iter().all(|p| {
+                !p.is_empty()
+                    && p.len() <= 3
+                    && p.chars().all(|c| c.is_ascii_digit())
+                    && p.parse::<u16>().map(|n| n <= 255).unwrap_or(false)
+            })
+        {
             if !ip.starts_with("127.") && ip != "0.0.0.0" && !ip.starts_with("255.") {
                 return Some(ip.to_string());
             }

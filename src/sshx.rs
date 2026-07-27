@@ -14,26 +14,40 @@ pub fn base_opts(d: &Device) -> Vec<String> {
     let _ = ensure_dir(&cfg_dir());
     let _ = ensure_dir(&cm_dir());
     for s in [
-        "-o", &format!("UserKnownHostsFile={}", kh),
-        "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "ConnectTimeout=6",
-        "-o", "ServerAliveInterval=15",
-        "-o", "ServerAliveCountMax=3",
-        "-o", "LogLevel=ERROR",
-        "-o", "ControlMaster=auto",
-        "-o", &format!("ControlPath={}/%C", cm_dir().display()),
-        "-o", "ControlPersist=600",
+        "-o",
+        &format!("UserKnownHostsFile={}", kh),
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=6",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-o",
+        "LogLevel=ERROR",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        &format!("ControlPath={}/%C", cm_dir().display()),
+        "-o",
+        "ControlPersist=600",
     ] {
         o.push(s.to_string());
     }
     if d.legacy {
         // 老 dropbear / 旧 OpenSSH：把淘汰算法加回白名单
         for s in [
-            "-o", "HostKeyAlgorithms=+ssh-rsa,ssh-dss",
-            "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa",
-            "-o", "KexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1",
-            "-o", "Ciphers=+aes128-cbc,aes256-cbc,3des-cbc",
-            "-o", "MACs=+hmac-sha1",
+            "-o",
+            "HostKeyAlgorithms=+ssh-rsa,ssh-dss",
+            "-o",
+            "PubkeyAcceptedAlgorithms=+ssh-rsa",
+            "-o",
+            "KexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1",
+            "-o",
+            "Ciphers=+aes128-cbc,aes256-cbc,3des-cbc",
+            "-o",
+            "MACs=+hmac-sha1",
         ] {
             o.push(s.to_string());
         }
@@ -71,7 +85,10 @@ pub fn askpass_env(d: &Device) -> Vec<(String, String)> {
     vec![
         ("SSH_ASKPASS".into(), self_exe().display().to_string()),
         ("SSH_ASKPASS_REQUIRE".into(), "force".into()),
-        ("DISPLAY".into(), std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into())),
+        (
+            "DISPLAY".into(),
+            std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
+        ),
         ("FERRY_ASKPASS_DEV".into(), d.name.clone()),
     ]
 }
@@ -177,9 +194,19 @@ pub fn push(d: &Device, local: &Path, remote: &str) -> std::io::Result<bool> {
 
 /// tar 管道推送：本地 tar c | ssh "cd dest && tar x"。
 pub fn tar_push(d: &Device, local: &Path, remote: &str) -> std::io::Result<bool> {
-    let parent = local.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".into());
-    let base = local.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| ".".into());
-    let remote_cmd = format!("mkdir -p {} && cd {} && tar xf -", shell_quote(remote), shell_quote(remote));
+    let parent = local
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| ".".into());
+    let base = local
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".into());
+    let remote_cmd = format!(
+        "mkdir -p {} && cd {} && tar xf -",
+        shell_quote(remote),
+        shell_quote(remote)
+    );
     let mut ssh_part = vec!["ssh".to_string()];
     ssh_part.extend(base_opts(d));
     ssh_part.push(target(d));
@@ -211,7 +238,11 @@ pub fn pull(d: &Device, remote: &str, local: &Path) -> std::io::Result<bool> {
         return Ok(true);
     }
     warn("scp -O 也失败，改走 tar 管道 ...");
-    let rdir = if remote.ends_with('/') { remote.trim_end_matches('/') } else { remote };
+    let rdir = if remote.ends_with('/') {
+        remote.trim_end_matches('/')
+    } else {
+        remote
+    };
     let (rparent, rbase) = match rdir.rfind('/') {
         Some(i) if i > 0 => (&rdir[..i], &rdir[i + 1..]),
         _ => ("/", rdir.trim_start_matches('/')),
@@ -219,8 +250,16 @@ pub fn pull(d: &Device, remote: &str, local: &Path) -> std::io::Result<bool> {
     let mut ssh_part = vec!["ssh".to_string()];
     ssh_part.extend(base_opts(d));
     ssh_part.push(target(d));
-    ssh_part.push(format!("cd {} && tar cf - {}", shell_quote(rparent), shell_quote(rbase)));
-    let line = format!("{} | tar xf - -C {}", render_cmd(&ssh_part), shell_quote(&local.display().to_string()));
+    ssh_part.push(format!(
+        "cd {} && tar cf - {}",
+        shell_quote(rparent),
+        shell_quote(rbase)
+    ));
+    let line = format!(
+        "{} | tar xf - -C {}",
+        render_cmd(&ssh_part),
+        shell_quote(&local.display().to_string())
+    );
     let st = run_inherit(&argv(&["/bin/sh", "-c", &line]), &askpass_env(d))?;
     Ok(st == 0)
 }
@@ -240,11 +279,22 @@ pub fn keyup(d: &Device) -> std::io::Result<()> {
     if pubkey.is_empty() {
         info("本机还没有 ssh 密钥，生成一个 ed25519 ...");
         let st = run_inherit(
-            &argv(&["ssh-keygen", "-t", "ed25519", "-N", "", "-f", &home.join(".ssh/id_ed25519").display().to_string()]),
+            &argv(&[
+                "ssh-keygen",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-f",
+                &home.join(".ssh/id_ed25519").display().to_string(),
+            ]),
             &[],
         )?;
         if st != 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "ssh-keygen 失败"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "ssh-keygen 失败",
+            ));
         }
         pubkey = slurp(&home.join(".ssh/id_ed25519.pub")).trim().to_string();
     }
@@ -276,24 +326,45 @@ pub fn keyup(d: &Device) -> std::io::Result<()> {
 pub fn forget(d: &Device) {
     for host in [d.host.clone(), format!("[{}]:{}", d.host, d.port)] {
         let _ = run_capture(
-            &argv(&["ssh-keygen", "-R", &host, "-f", &known_hosts().display().to_string()]),
+            &argv(&[
+                "ssh-keygen",
+                "-R",
+                &host,
+                "-f",
+                &known_hosts().display().to_string(),
+            ]),
             &[],
         );
     }
     // 顺手断掉旧 master
     let dd = d.clone();
     let _ = master_ctl(&dd, "exit", &[]);
-    ok(&format!("已忘记 {} 的 host key（重刷后首连自动重新记录）。", d.name));
+    ok(&format!(
+        "已忘记 {} 的 host key（重刷后首连自动重新记录）。",
+        d.name
+    ));
 }
 
 /// 写入一段内容到远端文件（通过 stdin 管道，适合小文件/脚本）。
-pub fn write_remote_file(d: &Device, remote_path: &str, content: &str, mode: &str) -> std::io::Result<bool> {
+pub fn write_remote_file(
+    d: &Device,
+    remote_path: &str,
+    content: &str,
+    mode: &str,
+) -> std::io::Result<bool> {
     if dry() {
         let mut ssh_part = vec!["ssh".to_string()];
         ssh_part.extend(base_opts(d));
         ssh_part.push(target(d));
-        ssh_part.push(format!("cat > {} && chmod {} {}", remote_path, mode, remote_path));
-        println!("{} (stdin<<content) {}", magenta("DRY→"), render_cmd(&ssh_part));
+        ssh_part.push(format!(
+            "cat > {} && chmod {} {}",
+            remote_path, mode, remote_path
+        ));
+        println!(
+            "{} (stdin<<content) {}",
+            magenta("DRY→"),
+            render_cmd(&ssh_part)
+        );
         return Ok(true);
     }
     let mut a = vec!["ssh".to_string()];
@@ -311,7 +382,11 @@ pub fn write_remote_file(d: &Device, remote_path: &str, content: &str, mode: &st
     }
     cmd.stdin(std::process::Stdio::piped());
     let mut child = cmd.spawn()?;
-    child.stdin.as_mut().unwrap().write_all(content.as_bytes())?;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(content.as_bytes())?;
     let st = child.wait()?;
     Ok(st.success())
 }

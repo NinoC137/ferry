@@ -14,7 +14,14 @@ use std::time::{Duration, Instant};
 pub fn serial_ports() -> Vec<String> {
     let mut out: Vec<String> = vec![];
     #[cfg(target_os = "macos")]
-    let pats: &[&str] = &["cu.usbserial", "cu.usbmodem", "cu.wchusbserial", "cu.SLAB", "cu.PL2303", "cu."];
+    let pats: &[&str] = &[
+        "cu.usbserial",
+        "cu.usbmodem",
+        "cu.wchusbserial",
+        "cu.SLAB",
+        "cu.PL2303",
+        "cu.",
+    ];
     #[cfg(not(target_os = "macos"))]
     let pats: &[&str] = &["ttyUSB", "ttyACM"];
     if let Ok(rd) = std::fs::read_dir("/dev") {
@@ -28,7 +35,10 @@ pub fn serial_ports() -> Vec<String> {
             for n in &names {
                 if n.starts_with(p) {
                     let full = format!("/dev/{}", n);
-                    if !out.contains(&full) && !n.contains("Bluetooth") && !n.contains("debug-console") {
+                    if !out.contains(&full)
+                        && !n.contains("Bluetooth")
+                        && !n.contains("debug-console")
+                    {
                         out.push(full);
                     }
                 }
@@ -45,10 +55,19 @@ pub fn configure(dev: &str, baud: u32) -> std::io::Result<()> {
     #[cfg(not(target_os = "macos"))]
     let flag = "-F";
     let a = argv(&[
-        "stty", flag, dev,
+        "stty",
+        flag,
+        dev,
         &baud.to_string(),
-        "raw", "-echo", "-echoe", "-echok",
-        "cs8", "-cstopb", "-parenb", "-crtscts", "clocal",
+        "raw",
+        "-echo",
+        "-echoe",
+        "-echok",
+        "cs8",
+        "-cstopb",
+        "-parenb",
+        "-crtscts",
+        "clocal",
     ]);
     let out = run_capture(&a, &[])?;
     if out.status != 0 && !dry() {
@@ -94,7 +113,10 @@ impl RawTty {
 impl Drop for RawTty {
     fn drop(&mut self) {
         if let Some(s) = &self.saved {
-            let _ = Command::new("stty").arg(s).stdin(std::process::Stdio::inherit()).status();
+            let _ = Command::new("stty")
+                .arg(s)
+                .stdin(std::process::Stdio::inherit())
+                .status();
         }
     }
 }
@@ -171,7 +193,12 @@ where
 /// 直连串口 console。
 pub fn console(dev: &str, baud: u32, log: Option<&Path>) -> std::io::Result<()> {
     if dry() {
-        println!("{} serial console {} @{} (Ctrl-] 退出)", magenta("DRY→"), dev, baud);
+        println!(
+            "{} serial console {} @{} (Ctrl-] 退出)",
+            magenta("DRY→"),
+            dev,
+            baud
+        );
         return Ok(());
     }
     let port = open_port(dev, baud)?;
@@ -204,7 +231,10 @@ impl Expecter {
                 }
             }
         });
-        Expecter { rx, transcript: String::new() }
+        Expecter {
+            rx,
+            transcript: String::new(),
+        }
     }
 
     fn ingest(&mut self, data: &[u8]) {
@@ -217,7 +247,12 @@ impl Expecter {
     }
 
     /// 只匹配 `from` 之后到达的数据 —— 避免历史回显/旧提示符造成误命中。
-    pub fn expect_from(&mut self, from: usize, patterns: &[&str], timeout: Duration) -> Option<usize> {
+    pub fn expect_from(
+        &mut self,
+        from: usize,
+        patterns: &[&str],
+        timeout: Duration,
+    ) -> Option<usize> {
         let deadline = Instant::now() + timeout;
         let from = from.min(self.transcript.len());
         loop {

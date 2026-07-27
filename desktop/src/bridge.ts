@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DeviceForm, DeviceSummary, ProbeResult, TerminalStarted } from "./types";
+import type { BlackboxView, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
 
 const isDesktop = "__TAURI_INTERNALS__" in window;
 
@@ -63,8 +63,8 @@ export async function checkConnection(name: string): Promise<ProbeResult> {
   return { online: device.online, detail: device.status };
 }
 
-export async function startTerminal(name: string, cols: number, rows: number): Promise<TerminalStarted> {
-  if (isDesktop) return invoke<TerminalStarted>("start_terminal", { name, cols, rows });
+export async function startTerminal(name: string, cols: number, rows: number, command?: string): Promise<TerminalStarted> {
+  if (isDesktop) return invoke<TerminalStarted>("start_terminal", { name, cols, rows, command });
   return {
     sessionId: `preview-${name}-${Date.now()}`,
     title: name,
@@ -72,3 +72,14 @@ export async function startTerminal(name: string, cols: number, rows: number): P
     wsUrl: "",
   };
 }
+
+export const transfer = (request: TransferRequest) => invoke<OperationResult>("transfer", { request });
+export const listForwards = () => invoke<ForwardView[]>("list_forwards");
+export const addForward = (name: string, spec: string) => invoke<OperationResult>("add_forward", { name, spec });
+export const removeForward = (id: string) => invoke<OperationResult>("remove_forward", { id });
+export const topSnapshot = () => invoke<TopRow[]>("top_snapshot");
+export const blackboxes = () => invoke<BlackboxView[]>("blackboxes");
+export const setBlackbox = (name: string, enabled: boolean) => invoke<OperationResult>("set_blackbox", { name, enabled });
+export const blackboxBlame = (name: string, lines = 80) => invoke<string>("blackbox_blame", { name, lines });
+export const workflowPreview = (kind: string, device: string, nat: boolean, persist: boolean, bootOk: boolean, mode: string) => invoke<WorkflowPlan>("workflow_preview", { kind, device, nat, persist, bootOk, mode });
+export const workflowExecute = (request: WorkflowRequest) => invoke<OperationResult>("workflow_execute", { request });

@@ -10,12 +10,13 @@ mod doctor;
 mod fingerprint;
 mod fwd;
 mod hash;
-mod hwprobe;
 mod httpd;
+mod hwprobe;
 mod jsonout;
 mod logs;
 mod mdns;
 mod netdiag;
+mod peripheral_brief;
 mod proxyd;
 mod pty;
 mod runx;
@@ -55,7 +56,9 @@ fn main() {
     }
 
     // 全局旗标。FERRY_JSON=1 等价于处处加 --json，方便 agent 一次设好。
-    let mut want_json = std::env::var("FERRY_JSON").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
+    let mut want_json = std::env::var("FERRY_JSON")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
     let mut rest: Vec<String> = vec![];
     for a in args.drain(..) {
         match a.as_str() {
@@ -84,9 +87,40 @@ fn main() {
 fn known_command(s: &str) -> bool {
     matches!(
         s,
-        "ls" | "add" | "rm" | "sh" | "push" | "pull" | "cp" | "run" | "debug" | "fwd" | "share" | "scan"
-            | "usb" | "up" | "sync" | "log" | "top" | "info" | "blame" | "bb" | "all" | "keyup" | "forget"
-            | "wifi" | "doctor" | "fix" | "ui" | "serve" | "net" | "watch" | "proxy" | "hw" | "help" | "-h" | "--help"
+        "ls" | "add"
+            | "rm"
+            | "sh"
+            | "push"
+            | "pull"
+            | "cp"
+            | "run"
+            | "debug"
+            | "fwd"
+            | "share"
+            | "scan"
+            | "usb"
+            | "up"
+            | "sync"
+            | "log"
+            | "top"
+            | "info"
+            | "blame"
+            | "bb"
+            | "all"
+            | "keyup"
+            | "forget"
+            | "wifi"
+            | "doctor"
+            | "fix"
+            | "ui"
+            | "serve"
+            | "net"
+            | "watch"
+            | "proxy"
+            | "hw"
+            | "help"
+            | "-h"
+            | "--help"
     )
 }
 
@@ -141,7 +175,9 @@ fn dispatch(args: Vec<String>) -> i32 {
         // 内部入口
         "__askpass" => sshx::askpass_main(tail.first().map(|s| s.as_str()).unwrap_or("")),
         "__proxyd" => {
-            let port = flag_val(&tail, "--port").and_then(|p| p.parse().ok()).unwrap_or(proxyd::DEFAULT_PORT);
+            let port = flag_val(&tail, "--port")
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(proxyd::DEFAULT_PORT);
             let up = flag_val(&tail, "--upstream")
                 .map(|u| proxyd::Upstream::parse(&u).unwrap_or(proxyd::Upstream::Direct))
                 .unwrap_or(proxyd::Upstream::Direct);
@@ -175,14 +211,40 @@ fn dispatch(args: Vec<String>) -> i32 {
 fn json_capable(cmd: &str) -> bool {
     matches!(
         cmd,
-        "" | "ls" | "add" | "rm" | "sh" | "push" | "pull" | "cp" | "fwd" | "share" | "proxy" | "watch"
-            | "net" | "scan" | "info" | "all" | "bb" | "blame" | "keyup" | "forget" | "wifi" | "doctor"
-            | "fix" | "help" | "-h" | "--help" | "serve" | "hw"
+        "" | "ls"
+            | "add"
+            | "rm"
+            | "sh"
+            | "push"
+            | "pull"
+            | "cp"
+            | "fwd"
+            | "share"
+            | "proxy"
+            | "watch"
+            | "net"
+            | "scan"
+            | "info"
+            | "all"
+            | "bb"
+            | "blame"
+            | "keyup"
+            | "forget"
+            | "wifi"
+            | "doctor"
+            | "fix"
+            | "help"
+            | "-h"
+            | "--help"
+            | "serve"
+            | "hw"
     )
 }
 
 fn flag_val(args: &[String], name: &str) -> Option<String> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1).cloned())
 }
 fn has_flag(args: &[String], name: &str) -> bool {
     args.iter().any(|a| a == name)
@@ -240,7 +302,13 @@ fn need_dev(cfg: &Config, name: Option<&str>) -> Result<Device, i32> {
     let items: Vec<String> = cfg
         .devices
         .values()
-        .map(|d| format!("{}  {}", d.name, dim(&format!("[{}] {}", d.transport.as_str(), d.endpoint()))))
+        .map(|d| {
+            format!(
+                "{}  {}",
+                d.name,
+                dim(&format!("[{}] {}", d.transport.as_str(), d.endpoint()))
+            )
+        })
         .collect();
     match pick("选择设备:", &items) {
         Some(i) => Ok(cfg.devices.values().nth(i).cloned().unwrap()),
@@ -273,7 +341,14 @@ fn probe_status(d: &Device) -> (bool, String) {
                 .ok()
                 .map(|a| TcpStream::connect_timeout(&a, Duration::from_millis(500)).is_ok())
                 .unwrap_or(false);
-            (okk, if okk { "在线".into() } else { "不可达".into() })
+            (
+                okk,
+                if okk {
+                    "在线".into()
+                } else {
+                    "不可达".into()
+                },
+            )
         }
         Transport::Adb => adbx::probe(d),
         Transport::Serial => {
@@ -300,7 +375,10 @@ fn probe_all(devs: &[Device]) -> Vec<(bool, String)> {
             std::thread::spawn(move || probe_status(&d))
         })
         .collect();
-    handles.into_iter().map(|h| h.join().unwrap_or((false, "?".into()))).collect()
+    handles
+        .into_iter()
+        .map(|h| h.join().unwrap_or((false, "?".into())))
+        .collect()
 }
 
 fn cmd_ls() -> i32 {
@@ -332,27 +410,47 @@ fn cmd_ls() -> i32 {
                 ])
             })
             .collect();
-        return jsonout::emit_ok(vec![("count", J::i(items.len() as i64)), ("devices", J::arr(items))]);
+        return jsonout::emit_ok(vec![
+            ("count", J::i(items.len() as i64)),
+            ("devices", J::arr(items)),
+        ]);
     }
 
     if cfg.devices.is_empty() {
         println!("{}", bold("ferry — 上位机↔下位机摆渡人"));
         println!();
         println!("还没有设备档案。三种起步方式:");
-        println!("  {}   交互建档（ssh/adb/串口任一）", cyan("fy add <名字> --ssh root@192.168.1.x"));
-        println!("  {}                       扫描周围的板子并建档", cyan("fy scan --add"));
-        println!("  {}                    插 USB 线一键配网", cyan("fy usb net"));
+        println!(
+            "  {}   交互建档（ssh/adb/串口任一）",
+            cyan("fy add <名字> --ssh root@192.168.1.x")
+        );
+        println!(
+            "  {}                       扫描周围的板子并建档",
+            cyan("fy scan --add")
+        );
+        println!(
+            "  {}                    插 USB 线一键配网",
+            cyan("fy usb net")
+        );
         return 0;
     }
     let mut rows = vec![];
     for (d, (on, why)) in devs.iter().zip(states.iter()) {
         let f = config::facts_load(&d.name);
-        let id_hint = if !f.hostname.is_empty() { f.hostname.clone() } else { f.os.clone() };
+        let id_hint = if !f.hostname.is_empty() {
+            f.hostname.clone()
+        } else {
+            f.os.clone()
+        };
         rows.push(vec![
             bold(&d.name),
             d.transport.as_str().to_string(),
             d.endpoint(),
-            if *on { green(&format!("● {}", why)) } else { red(&format!("○ {}", why)) },
+            if *on {
+                green(&format!("● {}", why))
+            } else {
+                red(&format!("○ {}", why))
+            },
             dim(&id_hint),
             dim(&human_ago(f.last_seen)),
         ]);
@@ -443,7 +541,10 @@ fn cmd_push(args: Vec<String>) -> i32 {
 
     if has_flag(&args, "--all") {
         if pos.is_empty() {
-            return fail(code::USAGE, "用法: fy push --all <本地路径> [远端路径] [--only 前缀]");
+            return fail(
+                code::USAGE,
+                "用法: fy push --all <本地路径> [远端路径] [--only 前缀]",
+            );
         }
         let local = PathBuf::from(&pos[0]);
         let remote = pos.get(1).cloned();
@@ -514,7 +615,11 @@ fn push_all(
         .devices
         .values()
         .filter(|d| d.transport != Transport::Serial)
-        .filter(|d| only.as_ref().map(|p| d.name.starts_with(p.as_str())).unwrap_or(true))
+        .filter(|d| {
+            only.as_ref()
+                .map(|p| d.name.starts_with(p.as_str()))
+                .unwrap_or(true)
+        })
         .cloned()
         .collect();
     if devs.is_empty() {
@@ -534,10 +639,17 @@ fn push_all(
         .map(|(d, (_, why))| (d.name.clone(), why.clone()))
         .collect();
     if live.is_empty() {
-        let detail: Vec<String> = offline.iter().map(|(n, w)| format!("{}({})", n, w)).collect();
+        let detail: Vec<String> = offline
+            .iter()
+            .map(|(n, w)| format!("{}({})", n, w))
+            .collect();
         return fail_hint(
             code::UNREACHABLE,
-            &format!("匹配到 {} 台设备，但一台在线的都没有: {}", devs.len(), detail.join(" ")),
+            &format!(
+                "匹配到 {} 台设备，但一台在线的都没有: {}",
+                devs.len(),
+                detail.join(" ")
+            ),
             Some("先 `fy ls` 看状态，或 `fy scan` 认领换了 IP 的板子"),
         );
     }
@@ -545,7 +657,11 @@ fn push_all(
         warn(&format!(
             "跳过 {} 台不在线的: {}",
             offline.len(),
-            offline.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(" ")
+            offline
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
         ));
     }
     info(&format!("并行分发到 {} 台在线设备 ...", live.len()));
@@ -584,7 +700,11 @@ fn push_all(
                     format!("{} 个文件", rs.len()),
                     human_bytes(sent),
                     human_dur(secs),
-                    if verified { green("已校验") } else { dim("未校验") },
+                    if verified {
+                        green("已校验")
+                    } else {
+                        dim("未校验")
+                    },
                 ]);
                 items.push(J::obj(vec![
                     ("device", J::s(&name)),
@@ -596,7 +716,14 @@ fn push_all(
             }
             Err(e) => {
                 worst = 1;
-                rows.push(vec![bold(&name), red("✗"), e.clone(), String::new(), String::new(), String::new()]);
+                rows.push(vec![
+                    bold(&name),
+                    red("✗"),
+                    e.clone(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ]);
                 items.push(J::obj(vec![
                     ("device", J::s(&name)),
                     ("ok", J::b(false)),
@@ -693,16 +820,33 @@ fn cmd_cp(args: Vec<String>) -> i32 {
             }
             // 目标以 / 结尾 → 沿用源文件名
             if dp.ends_with('/') || dp.is_empty() {
-                let base = sp.trim_end_matches('/').rsplit('/').next().unwrap_or("file");
-                dp = format!("{}{}", if dp.is_empty() { "/tmp/" } else { dp.as_str() }, base);
+                let base = sp
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("file");
+                dp = format!(
+                    "{}{}",
+                    if dp.is_empty() { "/tmp/" } else { dp.as_str() },
+                    base
+                );
             }
-            info(&format!("{}:{} → {}:{}（经主机中转，不落盘）", sd.name, sp, dd.name, dp));
+            info(&format!(
+                "{}:{} → {}:{}（经主机中转，不落盘）",
+                sd.name, sp, dd.name, dp
+            ));
             match xfer::device_to_device(&sd, &sp, &dd, &dp) {
                 Ok(n) => {
                     if jsonout::json_mode() {
                         return jsonout::emit_ok(vec![
-                            ("from", J::obj(vec![("device", J::s(&sd.name)), ("path", J::s(&sp))])),
-                            ("to", J::obj(vec![("device", J::s(&dd.name)), ("path", J::s(&dp))])),
+                            (
+                                "from",
+                                J::obj(vec![("device", J::s(&sd.name)), ("path", J::s(&sp))]),
+                            ),
+                            (
+                                "to",
+                                J::obj(vec![("device", J::s(&dd.name)), ("path", J::s(&dp))]),
+                            ),
                             ("bytes", J::i(n as i64)),
                         ]);
                     }
@@ -715,13 +859,22 @@ fn cmd_cp(args: Vec<String>) -> i32 {
     }
 }
 
-
-
-
 // ---------------- add / rm ----------------
 
 fn cmd_add(args: Vec<String>) -> i32 {
-    let pos = positional(&args, &["--ssh", "--adb", "--serial", "--baud", "--password", "--key", "--dest", "--notes"]);
+    let pos = positional(
+        &args,
+        &[
+            "--ssh",
+            "--adb",
+            "--serial",
+            "--baud",
+            "--password",
+            "--key",
+            "--dest",
+            "--notes",
+        ],
+    );
     let name = match pos.first() {
         Some(n) => n.clone(),
         None => {
@@ -731,11 +884,18 @@ fn cmd_add(args: Vec<String>) -> i32 {
             )
         }
     };
-    if !name.chars().all(|c| c.is_alphanumeric() || "_-".contains(c)) {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || "_-".contains(c))
+    {
         return fail(code::USAGE, "名字只能用字母数字-_（会用作文件名）");
     }
     let mut cfg = Config::load();
-    let mut d = cfg.devices.get(&name).cloned().unwrap_or_else(|| Device::new(&name, Transport::Ssh));
+    let mut d = cfg
+        .devices
+        .get(&name)
+        .cloned()
+        .unwrap_or_else(|| Device::new(&name, Transport::Ssh));
 
     if let Some(ssh) = flag_val(&args, "--ssh") {
         d.transport = Transport::Ssh;
@@ -745,7 +905,9 @@ fn cmd_add(args: Vec<String>) -> i32 {
             None => (d.user.clone(), ssh),
         };
         let (host, port) = match hostport.rsplit_once(':') {
-            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h.to_string(), p.parse().unwrap_or(22)),
+            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => {
+                (h.to_string(), p.parse().unwrap_or(22))
+            }
             _ => (hostport, 22),
         };
         d.user = user;
@@ -792,7 +954,10 @@ fn cmd_add(args: Vec<String>) -> i32 {
     }
     ok(&format!("{} = {}", name, summary));
     if has_pw {
-        info(&format!("密码明文存在 devices.toml (0600)。跑一次 fy keyup {} 就能转免密。", name));
+        info(&format!(
+            "密码明文存在 devices.toml (0600)。跑一次 fy keyup {} 就能转免密。",
+            name
+        ));
     }
     let saved = Config::load();
     match saved.devices.get(&name) {
@@ -853,7 +1018,10 @@ fn cmd_sh(args: Vec<String>) -> i32 {
             Transport::Ssh => sshx::exec_capture(&d, &cmd),
             Transport::Adb => adbx::exec_capture(&d, &cmd),
             Transport::Serial => {
-                return fail(code::UNSUPPORTED, "串口设备不支持一次性命令，先 fy up 爬到 ssh")
+                return fail(
+                    code::UNSUPPORTED,
+                    "串口设备不支持一次性命令，先 fy up 爬到 ssh",
+                )
             }
         };
         return match out {
@@ -879,7 +1047,10 @@ fn cmd_sh(args: Vec<String>) -> i32 {
         (Transport::Adb, Some(c)) => adbx::exec_inherit(&d, &c, false),
         (Transport::Serial, None) => blackbox::serial_shell(&cfg, &d.name).map(|_| 0),
         (Transport::Serial, Some(_)) => {
-            return fail(code::UNSUPPORTED, "串口设备不支持一次性命令，先 fy up 爬到 ssh");
+            return fail(
+                code::UNSUPPORTED,
+                "串口设备不支持一次性命令，先 fy up 爬到 ssh",
+            );
         }
     };
     match r {
@@ -887,8 +1058,6 @@ fn cmd_sh(args: Vec<String>) -> i32 {
         Err(e) => fail(code::UNREACHABLE, &format!("{}", e)),
     }
 }
-
-
 
 // ---------------- run / debug ----------------
 
@@ -968,16 +1137,15 @@ fn cmd_fwd(args: Vec<String>) -> i32 {
             None => fail(code::USAGE, "用法: fy fwd rm <ID|all>"),
         },
         Some(dev) => {
-            let spec = match pos.get(1) {
-                Some(s) => s.clone(),
-                None => {
-                    return fail_hint(
+            let spec =
+                match pos.get(1) {
+                    Some(s) => s.clone(),
+                    None => return fail_hint(
                         code::USAGE,
                         "缺少转发规则",
                         Some("规则形如: 8080 · 8080:80 · 8080:10.0.0.9:80 · R:9000:8000 · D:1080"),
-                    )
-                }
-            };
+                    ),
+                };
             let d = match need_dev(&cfg, Some(dev)) {
                 Ok(d) => d,
                 Err(c) => return c,
@@ -990,7 +1158,11 @@ fn cmd_fwd(args: Vec<String>) -> i32 {
                     ("watchdog", J::b(watchd::is_running())),
                 ]),
                 Err(e) => fail(
-                    if d.transport == Transport::Serial { code::UNSUPPORTED } else { code::FAIL },
+                    if d.transport == Transport::Serial {
+                        code::UNSUPPORTED
+                    } else {
+                        code::FAIL
+                    },
                     &e,
                 ),
             }
@@ -1061,7 +1233,12 @@ fn cmd_scan(args: Vec<String>) -> i32 {
         let fields = scan::scan_json(&cfg, subnet.as_deref(), use_mdns);
         return jsonout::emit_ok(fields);
     }
-    scan::scan_cmd(&mut cfg, subnet.as_deref(), has_flag(&args, "--add"), use_mdns);
+    scan::scan_cmd(
+        &mut cfg,
+        subnet.as_deref(),
+        has_flag(&args, "--add"),
+        use_mdns,
+    );
     0
 }
 
@@ -1070,7 +1247,11 @@ fn cmd_usb(args: Vec<String>) -> i32 {
     match sub.as_str() {
         "net" => {
             let mut cfg = Config::load();
-            match usbnet::usb_net(&mut cfg, has_flag(&args, "--share"), flag_val(&args, "--as")) {
+            match usbnet::usb_net(
+                &mut cfg,
+                has_flag(&args, "--share"),
+                flag_val(&args, "--as"),
+            ) {
                 Ok(_) => 0,
                 Err(e) => {
                     err(&e);
@@ -1152,7 +1333,14 @@ fn cmd_sync(args: Vec<String>) -> i32 {
             }
         }
     }
-    match sync::sync_cmd(&d, &PathBuf::from(&pos[1]), &pos[2], hook.as_deref(), has_flag(&args, "--once"), ignores) {
+    match sync::sync_cmd(
+        &d,
+        &PathBuf::from(&pos[1]),
+        &pos[2],
+        hook.as_deref(),
+        has_flag(&args, "--once"),
+        ignores,
+    ) {
         Ok(_) => 0,
         Err(e) => {
             err(&format!("{}", e));
@@ -1208,6 +1396,36 @@ fn cmd_info(args: Vec<String>) -> i32 {
 
 fn cmd_hw(args: Vec<String>) -> i32 {
     let pos = positional(&args, &["--out", "--max-dt-nodes"]);
+    if pos.first().map(|s| s.as_str()) == Some("brief") {
+        let report = match pos.get(1) {
+            Some(v) => PathBuf::from(v),
+            None => {
+                return fail(
+                    code::USAGE,
+                    "用法: fy hw brief <hardware.json> [--out peripherals.md]",
+                )
+            }
+        };
+        let output = flag_val(&args, "--out")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                report
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("."))
+                    .join("peripherals.md")
+            });
+        if let Err(e) = peripheral_brief::write(&report, &output) {
+            return fail(code::CONFIG, &format!("生成外设简报失败: {}", e));
+        }
+        if jsonout::json_mode() {
+            return jsonout::emit_ok(vec![
+                ("report", J::s(report.display().to_string())),
+                ("peripheral_brief", J::s(output.display().to_string())),
+            ]);
+        }
+        ok(&format!("外设简报已保存: {}", output.display()));
+        return 0;
+    }
     if pos.first().map(|s| s.as_str()) == Some("agent") {
         let out = match flag_val(&args, "--out") {
             Some(v) => PathBuf::from(v),
@@ -1238,7 +1456,7 @@ fn cmd_hw(args: Vec<String>) -> i32 {
     if pos.is_empty() {
         return fail_hint(
             code::USAGE,
-            "用法: fy hw <设备> [--out 目录] [--no-bundle] [--keep-remote] [--include-identifiers] [--max-dt-nodes N]",
+            "用法: fy hw <设备> [--out 目录] [--no-bundle] [--no-brief] [--keep-remote] [--include-identifiers] [--max-dt-nodes N]；或 fy hw brief <hardware.json>",
             Some("默认只读采集并清理目标端临时目录；fy hw agent --out ./hwprobe.sh 可单独导出脚本"),
         );
     }
@@ -1258,6 +1476,7 @@ fn cmd_hw(args: Vec<String>) -> i32 {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(format!("hwprobe-{}-{}", d.name, now_epoch()))),
         bundle: !has_flag(&args, "--no-bundle"),
+        brief: !has_flag(&args, "--no-brief"),
         keep_remote: has_flag(&args, "--keep-remote"),
         include_identifiers: has_flag(&args, "--include-identifiers"),
         max_dt_nodes,
@@ -1269,7 +1488,18 @@ fn cmd_hw(args: Vec<String>) -> i32 {
                     ("device", transport_json(&d)),
                     ("output_dir", J::s(r.output_dir.display().to_string())),
                     ("report", J::s(r.report.display().to_string())),
-                    ("device_tree_archive", r.archive.map(|p| J::s(p.display().to_string())).unwrap_or(J::Null)),
+                    (
+                        "device_tree_archive",
+                        r.archive
+                            .map(|p| J::s(p.display().to_string()))
+                            .unwrap_or(J::Null),
+                    ),
+                    (
+                        "peripheral_brief",
+                        r.brief
+                            .map(|p| J::s(p.display().to_string()))
+                            .unwrap_or(J::Null),
+                    ),
                     ("remote_dir", J::s(r.remote_dir)),
                     ("identifiers_included", J::b(options.include_identifiers)),
                 ]);
@@ -1277,6 +1507,9 @@ fn cmd_hw(args: Vec<String>) -> i32 {
             ok(&format!("硬件清单已保存: {}", r.report.display()));
             if let Some(archive) = r.archive {
                 ok(&format!("原始设备树已保存: {}", archive.display()));
+            }
+            if let Some(brief) = r.brief {
+                ok(&format!("外设简报已保存: {}", brief.display()));
             }
             0
         }
@@ -1291,7 +1524,9 @@ fn cmd_blame(args: Vec<String>) -> i32 {
         Ok(d) => d,
         Err(c) => return c,
     };
-    let n = flag_val(&args, "-n").and_then(|v| v.parse().ok()).unwrap_or(60);
+    let n = flag_val(&args, "-n")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
     if jsonout::json_mode() {
         let dir = blackbox::incidents_dir(&d.name);
         let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
@@ -1307,7 +1542,9 @@ fn cmd_blame(args: Vec<String>) -> i32 {
             ("incident_count", J::i(files.len() as i64)),
             (
                 "latest",
-                latest.map(|p| J::s(p.display().to_string())).unwrap_or(J::Null),
+                latest
+                    .map(|p| J::s(p.display().to_string()))
+                    .unwrap_or(J::Null),
             ),
             ("lines", J::strs(&tail)),
         ]);
@@ -1325,7 +1562,9 @@ fn cmd_bb(args: Vec<String>) -> i32 {
                 Err(c) => return c,
             };
             match blackbox::start(&cfg, &d.name) {
-                Ok(_) => jsonout::emit_ok(vec![("device", J::s(&d.name)), ("recording", J::b(true))]),
+                Ok(_) => {
+                    jsonout::emit_ok(vec![("device", J::s(&d.name)), ("recording", J::b(true))])
+                }
                 Err(e) => fail(code::FAIL, &e),
             }
         }
@@ -1345,7 +1584,9 @@ fn cmd_bb(args: Vec<String>) -> i32 {
                     .into_iter()
                     .map(|name| {
                         let pid = st.get_int(&format!("bb.{}", name), "pid") as i32;
-                        let n = std::fs::read_dir(blackbox::incidents_dir(&name)).map(|r| r.count()).unwrap_or(0);
+                        let n = std::fs::read_dir(blackbox::incidents_dir(&name))
+                            .map(|r| r.count())
+                            .unwrap_or(0);
                         J::obj(vec![
                             ("device", J::s(&name)),
                             ("alive", J::b(pid_alive(pid))),
@@ -1359,7 +1600,10 @@ fn cmd_bb(args: Vec<String>) -> i32 {
             blackbox::status(&cfg);
             0
         }
-        Some(other) => fail(code::USAGE, &format!("fy bb 只有 start/stop/status，没有 '{}'", other)),
+        Some(other) => fail(
+            code::USAGE,
+            &format!("fy bb 只有 start/stop/status，没有 '{}'", other),
+        ),
     }
 }
 
@@ -1415,7 +1659,10 @@ fn cmd_keyup(args: Vec<String>) -> i32 {
         return fail(code::UNSUPPORTED, "keyup 只对 ssh 设备有意义");
     }
     match sshx::keyup(&d) {
-        Ok(_) => jsonout::emit_ok(vec![("device", J::s(&d.name)), ("passwordless", J::b(true))]),
+        Ok(_) => jsonout::emit_ok(vec![
+            ("device", J::s(&d.name)),
+            ("passwordless", J::b(true)),
+        ]),
         Err(e) => fail(code::FAIL, &format!("{}", e)),
     }
 }
@@ -1437,11 +1684,18 @@ fn cmd_wifi(args: Vec<String>) -> i32 {
         Err(c) => return c,
     };
     if d.transport != Transport::Adb {
-        return fail(code::UNSUPPORTED, "wifi 是 adb 设备专属（把 USB adb 切成 WiFi adb）");
+        return fail(
+            code::UNSUPPORTED,
+            "wifi 是 adb 设备专属（把 USB adb 切成 WiFi adb）",
+        );
     }
     match adbx::wifi(&mut cfg, &d) {
         Ok(_) => {
-            let ep = Config::load().devices.get(&d.name).map(|x| x.endpoint()).unwrap_or_default();
+            let ep = Config::load()
+                .devices
+                .get(&d.name)
+                .map(|x| x.endpoint())
+                .unwrap_or_default();
             jsonout::emit_ok(vec![("device", J::s(&d.name)), ("endpoint", J::s(&ep))])
         }
         Err(e) => fail(code::FAIL, &format!("{}", e)),
@@ -1459,7 +1713,9 @@ fn cmd_doctor(args: Vec<String>) -> i32 {
 }
 
 fn cmd_ui(args: Vec<String>) -> i32 {
-    let port = flag_val(&args, "--port").and_then(|p| p.parse().ok()).unwrap_or(7900);
+    let port = flag_val(&args, "--port")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(7900);
     let open = !has_flag(&args, "--no-open");
     match ui::run(port, open) {
         Ok(_) => 0,
@@ -1479,21 +1735,27 @@ fn cmd_fix(args: Vec<String>) -> i32 {
                 Err(c) => return c,
             };
             match doctor::fix_time(&d) {
-                Ok(_) => jsonout::emit_ok(vec![("device", J::s(&d.name)), ("time_synced", J::b(true))]),
+                Ok(_) => {
+                    jsonout::emit_ok(vec![("device", J::s(&d.name)), ("time_synced", J::b(true))])
+                }
                 Err(e) => fail(code::FAIL, &e),
             }
         }
-        _ => fail(code::USAGE, "目前有: fy fix time <设备>（把主机时间打进板子）"),
+        _ => fail(
+            code::USAGE,
+            "目前有: fy fix time <设备>（把主机时间打进板子）",
+        ),
     }
 }
-
 
 // ---------------- serve / net / watch / proxy ----------------
 
 fn cmd_serve(args: Vec<String>) -> i32 {
     let valflags = ["--port", "--bind", "--upload", "--token", "--for"];
     let pos = positional(&args, &valflags);
-    let port: u16 = flag_val(&args, "--port").and_then(|p| p.parse().ok()).unwrap_or(8000);
+    let port: u16 = flag_val(&args, "--port")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000);
     let cfg = Config::load();
     let for_dev = match flag_val(&args, "--for") {
         Some(n) => match need_dev(&cfg, Some(&n)) {
@@ -1503,7 +1765,9 @@ fn cmd_serve(args: Vec<String>) -> i32 {
         None => None,
     };
     let upload = if has_flag(&args, "--upload") {
-        Some(PathBuf::from(flag_val(&args, "--upload").unwrap_or_else(|| ".".into())))
+        Some(PathBuf::from(
+            flag_val(&args, "--upload").unwrap_or_else(|| ".".into()),
+        ))
     } else {
         None
     };
@@ -1549,11 +1813,16 @@ fn cmd_net(args: Vec<String>) -> i32 {
 fn cmd_watch(args: Vec<String>) -> i32 {
     match args.first().map(|s| s.as_str()) {
         Some("start") => {
-            let iv = flag_val(&args, "--interval").and_then(|v| v.parse().ok()).unwrap_or(15u64);
+            let iv = flag_val(&args, "--interval")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(15u64);
             match watchd::start(iv, false) {
                 Ok(pid) => {
                     if jsonout::json_mode() {
-                        return jsonout::emit_ok(vec![("running", J::b(true)), ("pid", J::i(pid as i64))]);
+                        return jsonout::emit_ok(vec![
+                            ("running", J::b(true)),
+                            ("pid", J::i(pid as i64)),
+                        ]);
                     }
                     0
                 }
@@ -1598,7 +1867,10 @@ fn cmd_watch(args: Vec<String>) -> i32 {
                 human_ago(s.started).trim_end_matches(" ago")
             );
             if s.devices.is_empty() {
-                println!("{}", dim("还没盯上任何设备（建个转发或 fy share 就会自动纳管）"));
+                println!(
+                    "{}",
+                    dim("还没盯上任何设备（建个转发或 fy share 就会自动纳管）")
+                );
             } else {
                 let rows: Vec<Vec<String>> = s
                     .devices
@@ -1606,7 +1878,11 @@ fn cmd_watch(args: Vec<String>) -> i32 {
                     .map(|(n, last, rc)| {
                         vec![
                             bold(n),
-                            if *last > 0 { human_ago(*last) } else { dim("never") },
+                            if *last > 0 {
+                                human_ago(*last)
+                            } else {
+                                dim("never")
+                            },
                             rc.to_string(),
                         ]
                     })
@@ -1615,7 +1891,10 @@ fn cmd_watch(args: Vec<String>) -> i32 {
             }
             0
         }
-        Some(other) => fail(code::USAGE, &format!("fy watch 只有 start/stop/status，没有 '{}'", other)),
+        Some(other) => fail(
+            code::USAGE,
+            &format!("fy watch 只有 start/stop/status，没有 '{}'", other),
+        ),
     }
 }
 
@@ -1694,7 +1973,10 @@ fn cmd_proxy(args: Vec<String>) -> i32 {
             }
             0
         }
-        other => fail(code::USAGE, &format!("fy proxy 只有 start/stop/status，没有 '{}'", other)),
+        other => fail(
+            code::USAGE,
+            &format!("fy proxy 只有 start/stop/status，没有 '{}'", other),
+        ),
     }
 }
 
@@ -1737,7 +2019,7 @@ fn emit_catalog() -> i32 {
         cmd("net", "fy net <设备> [-c N] [--no-speed]", "网络体检：延迟/抖动/丢包、MTU、路由、DNS、出网、上下行实测带宽", true),
         cmd("scan", "fy scan [--subnet CIDR] [--add] [--no-mdns]", "发现设备：mDNS + 网段扫描 + 指纹认领", true),
         cmd("info", "fy info <设备>", "身份卡片：内核/架构/MAC/machine-id", true),
-        cmd("hw", "fy hw <设备> [--out 目录] [--no-bundle] [--include-identifiers] [--max-dt-nodes N]", "一次性只读采集硬件清单：proc/sysfs/live DT，默认回收原始 DT archive", true),
+        cmd("hw", "fy hw <设备> [--out 目录] [--no-bundle] [--no-brief] [--include-identifiers] [--max-dt-nodes N] | fy hw brief <hardware.json> [--out peripherals.md]", "一次性采集硬件清单，或离线从 JSON 生成可读的 peripherals.md", true),
         cmd("up", "fy up <设备> [--boot]", "通道爬升：串口登录→配网→ssh+免密", false),
         cmd("usb", "fy usb net|gadget|install", "USB 一键配网", false),
         cmd("sync", "fy sync <设备> <本地目录> <远端目录> [--exec 命令] [--once]", "保存即上板", false),
@@ -1819,7 +2101,8 @@ fn print_help() {
   fy scan [--subnet CIDR] [--add] [--no-mdns]   mDNS + 并发扫段 + 老朋友换IP自动认领
   fy sh [设备] [-- 命令]     进 shell / 跑一条命令（串口自动经黑匣子共享）
   fy info <设备>             身份卡片: 内核/架构/MAC/machine-id/实时状态
-  fy hw <设备> [--out 目录]  一次性硬件快照: proc/sysfs/设备树 + 原始 DT archive
+  fy hw <设备> [--out 目录]  一次性硬件快照: JSON/设备树 + 外设简报 peripherals.md
+  fy hw brief <hardware.json> [--out peripherals.md]  离线从既有 JSON 重建外设简报
 
 {s2}
   fy push <设备> <本地> [远端]      上传: 断点续传 + sha256 校验 + 进度条

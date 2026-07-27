@@ -42,7 +42,11 @@ pub fn local_nets() -> Vec<(String, u8)> {
                     let toks: Vec<&str> = t.split_whitespace().collect();
                     if toks.len() >= 4 {
                         let ip = toks[1].to_string();
-                        if let Some(mask) = toks.iter().position(|x| *x == "netmask").map(|i| toks[i + 1]) {
+                        if let Some(mask) = toks
+                            .iter()
+                            .position(|x| *x == "netmask")
+                            .map(|i| toks[i + 1])
+                        {
                             cur_prefix = netmask_bits(mask);
                         }
                         out.push((ip, cur_prefix));
@@ -94,7 +98,10 @@ fn arp_table() -> BTreeMap<String, String> {
             // mac:  ? (192.168.1.7) at a4:83:e7:xx:xx:xx on en0 ...
             // linux:? (192.168.1.7) at a4:83:e7:xx:xx:xx [ether] on wlan0
             let ip = line.split('(').nth(1).and_then(|s| s.split(')').next());
-            let mac = line.split(" at ").nth(1).and_then(|s| s.split_whitespace().next());
+            let mac = line
+                .split(" at ")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next());
             if let (Some(ip), Some(mac)) = (ip, mac) {
                 if mac.contains(':') {
                     m.insert(ip.to_string(), normalize_mac(mac));
@@ -195,7 +202,12 @@ fn probe_ports(targets: &[String], hot: &BTreeMap<String, String>) -> BTreeMap<S
             let ms = if hot.contains_key(ip) { 600 } else { 250 };
             if let Ok(addr) = format!("{}:{}", ip, port).parse::<SocketAddr>() {
                 if TcpStream::connect_timeout(&addr, Duration::from_millis(ms)).is_ok() {
-                    found.lock().unwrap().entry(ip.clone()).or_default().push(*port);
+                    found
+                        .lock()
+                        .unwrap()
+                        .entry(ip.clone())
+                        .or_default()
+                        .push(*port);
                 }
             }
         }));
@@ -203,7 +215,9 @@ fn probe_ports(targets: &[String], hot: &BTreeMap<String, String>) -> BTreeMap<S
     for h in handles {
         let _ = h.join();
     }
-    let mut m = Arc::try_unwrap(found).map(|x| x.into_inner().unwrap()).unwrap_or_default();
+    let mut m = Arc::try_unwrap(found)
+        .map(|x| x.into_inner().unwrap())
+        .unwrap_or_default();
     for v in m.values_mut() {
         v.sort();
     }
@@ -245,7 +259,12 @@ pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -
     for (ip, open) in open_map {
         by_ip.insert(
             ip.clone(),
-            Hit { ip, open, via: "tcp".into(), ..Default::default() },
+            Hit {
+                ip,
+                open,
+                via: "tcp".into(),
+                ..Default::default()
+            },
         );
     }
     for m in mdns_hits {
@@ -324,7 +343,13 @@ fn expand_cidr(cidr: &str) -> Vec<String> {
     (1..count.saturating_sub(1))
         .map(|i| {
             let v = start + i;
-            format!("{}.{}.{}.{}", v >> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255)
+            format!(
+                "{}.{}.{}.{}",
+                v >> 24,
+                (v >> 16) & 255,
+                (v >> 8) & 255,
+                v & 255
+            )
         })
         .collect()
 }
@@ -377,7 +402,10 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
         if let Some(name) = &h.known_as {
             if let Some(d) = cfg.devices.get(name) {
                 if d.transport == Transport::Ssh && d.host != h.ip && !h.ip.is_empty() {
-                    if confirm(&format!("{} 好像搬家了 {} → {}，更新档案?", name, d.host, h.ip), true) {
+                    if confirm(
+                        &format!("{} 好像搬家了 {} → {}，更新档案?", name, d.host, h.ip),
+                        true,
+                    ) {
                         let mut dd = d.clone();
                         dd.host = h.ip.clone();
                         cfg.devices.insert(name.clone(), dd);
@@ -427,12 +455,18 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
     if do_add {
         let mut candidates: Vec<String> = vec![];
         for h in &hits {
-            if h.known_as.is_none() && (h.open.contains(&22) || h.open.contains(&5555) || h.open.contains(&8022)) {
+            if h.known_as.is_none()
+                && (h.open.contains(&22) || h.open.contains(&5555) || h.open.contains(&8022))
+            {
                 candidates.push(format!("ssh {}", h.ip));
             }
         }
         for (serial, _) in &adbs {
-            if !cfg.devices.values().any(|d| d.adb_serial.as_deref() == Some(serial)) {
+            if !cfg
+                .devices
+                .values()
+                .any(|d| d.adb_serial.as_deref() == Some(serial))
+            {
                 candidates.push(format!("adb {}", serial));
             }
         }
@@ -494,7 +528,11 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
 }
 
 /// `fy scan --json`：把网络/adb/串口三类发现结果一次给出去。
-pub fn scan_json(cfg: &Config, subnet: Option<&str>, use_mdns: bool) -> Vec<(&'static str, crate::jsonout::J)> {
+pub fn scan_json(
+    cfg: &Config,
+    subnet: Option<&str>,
+    use_mdns: bool,
+) -> Vec<(&'static str, crate::jsonout::J)> {
     use crate::jsonout::J;
     let hits = sweep_opts(cfg, subnet, use_mdns);
     let net: Vec<J> = hits
@@ -502,7 +540,10 @@ pub fn scan_json(cfg: &Config, subnet: Option<&str>, use_mdns: bool) -> Vec<(&'s
         .map(|h| {
             J::obj(vec![
                 ("ip", J::s(&h.ip)),
-                ("ports", J::arr(h.open.iter().map(|p| J::i(*p as i64)).collect())),
+                (
+                    "ports",
+                    J::arr(h.open.iter().map(|p| J::i(*p as i64)).collect()),
+                ),
                 ("mac", J::s(&h.mac)),
                 ("banner", J::s(&h.banner)),
                 ("hostname", J::s(&h.hostname)),
@@ -524,7 +565,11 @@ pub fn scan_json(cfg: &Config, subnet: Option<&str>, use_mdns: bool) -> Vec<(&'s
                 .find(|d| d.adb_serial.as_deref() == Some(serial.as_str()))
                 .map(|d| J::s(&d.name))
                 .unwrap_or(J::Null);
-            J::obj(vec![("serial", J::s(serial)), ("desc", J::s(desc)), ("known_as", known)])
+            J::obj(vec![
+                ("serial", J::s(serial)),
+                ("desc", J::s(desc)),
+                ("known_as", known),
+            ])
         })
         .collect();
     let serials: Vec<J> = serialx::serial_ports()
@@ -553,7 +598,10 @@ mod tests {
     #[test]
     fn cidr_expansion_bounds() {
         let v = expand_cidr("192.168.1.0/30");
-        assert_eq!(v, vec!["192.168.1.1".to_string(), "192.168.1.2".to_string()]);
+        assert_eq!(
+            v,
+            vec!["192.168.1.1".to_string(), "192.168.1.2".to_string()]
+        );
         let big = expand_cidr("10.0.0.0/24");
         assert_eq!(big.len(), 254, "/24 应给出 .1 ~ .254");
         assert_eq!(big[0], "10.0.0.1");

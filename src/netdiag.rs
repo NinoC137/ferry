@@ -72,7 +72,10 @@ pub struct NetReport {
 
 /// 用 TCP 建连计时代替 ICMP：不用 root、被防火墙挡的概率还更低。
 pub fn tcp_latency(host: &str, port: u16, count: u32, timeout_ms: u64) -> Latency {
-    let mut l = Latency { sent: count, ..Default::default() };
+    let mut l = Latency {
+        sent: count,
+        ..Default::default()
+    };
     let addr: SocketAddr = match format!("{}:{}", host, port).parse() {
         Ok(a) => a,
         Err(_) => return l,
@@ -103,7 +106,10 @@ pub fn tcp_latency(host: &str, port: u16, count: u32, timeout_ms: u64) -> Latenc
 
 /// adb 设备没有 IP 可连，改用一次 `adb shell echo` 的往返当延迟。
 fn adb_latency(d: &Device, count: u32) -> Latency {
-    let mut l = Latency { sent: count, ..Default::default() };
+    let mut l = Latency {
+        sent: count,
+        ..Default::default()
+    };
     let mut samples = vec![];
     for _ in 0..count {
         let t = Instant::now();
@@ -117,8 +123,8 @@ fn adb_latency(d: &Device, count: u32) -> Latency {
         l.max_ms = samples.iter().cloned().fold(0.0, f64::max);
         l.avg_ms = samples.iter().sum::<f64>() / samples.len() as f64;
         if samples.len() > 1 {
-            l.jitter_ms =
-                samples.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f64>() / (samples.len() - 1) as f64;
+            l.jitter_ms = samples.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f64>()
+                / (samples.len() - 1) as f64;
         }
     }
     l
@@ -183,7 +189,10 @@ pub fn speed_down(d: &Device) -> Result<f64, String> {
     let mut a = vec!["ssh".to_string()];
     a.extend(sshx::base_opts(d));
     a.push(sshx::target(d));
-    a.push(format!("dd if=/dev/zero bs=65536 count={} 2>/dev/null", count));
+    a.push(format!(
+        "dd if=/dev/zero bs=65536 count={} 2>/dev/null",
+        count
+    ));
     let mut cmd = Command::new(&a[0]);
     cmd.args(&a[1..]);
     for (k, v) in sshx::askpass_env(d) {
@@ -285,7 +294,10 @@ fn board_probe(d: &Device, r: &mut NetReport) {
                 // `2: eth0    inet 10.0.0.5/24 ...`
                 for tok in l.split_whitespace() {
                     let name = tok.trim_end_matches(':');
-                    if !name.is_empty() && !name.chars().all(|c| c.is_ascii_digit()) && !name.contains('.') {
+                    if !name.is_empty()
+                        && !name.chars().all(|c| c.is_ascii_digit())
+                        && !name.contains('.')
+                    {
                         r.iface = name.to_string();
                         break;
                     }
@@ -297,7 +309,11 @@ fn board_probe(d: &Device, r: &mut NetReport) {
     if r.iface.is_empty() {
         r.iface = iface_lines
             .iter()
-            .filter_map(|l| l.split_whitespace().nth(1).map(|s| s.trim_end_matches(':').to_string()))
+            .filter_map(|l| {
+                l.split_whitespace()
+                    .nth(1)
+                    .map(|s| s.trim_end_matches(':').to_string())
+            })
             .find(|n| n != "lo" && !n.is_empty())
             .unwrap_or_default();
     }
@@ -306,7 +322,10 @@ fn board_probe(d: &Device, r: &mut NetReport) {
     for l in &dev_lines {
         if let Some((name, rest)) = l.split_once(':') {
             if name.trim() == r.iface {
-                let n: Vec<i64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                let n: Vec<i64> = rest
+                    .split_whitespace()
+                    .filter_map(|x| x.parse().ok())
+                    .collect();
                 if n.len() >= 12 {
                     r.rx_err = n[2];
                     r.rx_drop = n[3];
@@ -326,13 +345,19 @@ fn board_probe(d: &Device, r: &mut NetReport) {
         );
         if let Some(o) = rexec(d, &more) {
             let parts: Vec<&str> = o.split("---").collect();
-            r.iface_mtu = parts.first().and_then(|s| s.trim().parse().ok()).unwrap_or(-1);
+            r.iface_mtu = parts
+                .first()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(-1);
             r.carrier = match parts.get(1).map(|s| s.trim()) {
                 Some("1") => "up".into(),
                 Some("0") => "down(网线/USB没插好?)".into(),
                 _ => "?".into(),
             };
-            r.speed_mbps = parts.get(2).and_then(|s| s.trim().parse().ok()).unwrap_or(-1);
+            r.speed_mbps = parts
+                .get(2)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(-1);
         }
     }
 
@@ -340,7 +365,10 @@ fn board_probe(d: &Device, r: &mut NetReport) {
     if !r.gateway.is_empty() {
         if let Some(o) = rexec(
             d,
-            &format!("ping -c1 -W2 {} >/dev/null 2>&1 && echo GWOK || echo GWNO", shell_quote(&r.gateway)),
+            &format!(
+                "ping -c1 -W2 {} >/dev/null 2>&1 && echo GWOK || echo GWNO",
+                shell_quote(&r.gateway)
+            ),
         ) {
             if o.contains("GWOK") {
                 r.gw_reachable = Some(true);
@@ -411,7 +439,8 @@ pub fn diagnose(d: &Device, count: u32, do_speed: bool) -> NetReport {
         ..Default::default()
     };
     if d.transport == Transport::Serial {
-        r.notes.push("串口设备没有网络可测；先 `fy up` 爬升到 ssh".into());
+        r.notes
+            .push("串口设备没有网络可测；先 `fy up` 爬升到 ssh".into());
         return r;
     }
     info("① 探测可达性 ...");
@@ -421,7 +450,8 @@ pub fn diagnose(d: &Device, count: u32, do_speed: bool) -> NetReport {
         Transport::Serial => Latency::default(),
     };
     if r.latency.recv == 0 {
-        r.notes.push("完全不通：先确认板子上电、线插好、IP 没变（fy scan 能帮你重新认领）".into());
+        r.notes
+            .push("完全不通：先确认板子上电、线插好、IP 没变（fy scan 能帮你重新认领）".into());
         return r;
     }
 
@@ -463,17 +493,22 @@ pub fn diagnose(d: &Device, count: u32, do_speed: bool) -> NetReport {
         ));
     }
     if r.gateway.is_empty() {
-        r.notes.push("板子没有默认路由：出不了子网。`fy share <设备>` 可以直接借主机的网".into());
+        r.notes
+            .push("板子没有默认路由：出不了子网。`fy share <设备>` 可以直接借主机的网".into());
     } else if r.gw_reachable == Some(false) {
-        r.notes.push("默认网关不通：路由配了但网关不在或被隔离".into());
+        r.notes
+            .push("默认网关不通：路由配了但网关不在或被隔离".into());
     }
     if r.dns_servers.is_empty() {
-        r.notes.push("/etc/resolv.conf 里没有 nameserver：域名一律解析失败".into());
+        r.notes
+            .push("/etc/resolv.conf 里没有 nameserver：域名一律解析失败".into());
     } else if r.dns_ok == Some(false) {
-        r.notes.push("DNS 解析不动：`fy share <设备>` 的代理模式让主机替它解析，最省事".into());
+        r.notes
+            .push("DNS 解析不动：`fy share <设备>` 的代理模式让主机替它解析，最省事".into());
     }
     if r.inet_ok == Some(false) && r.dns_ok == Some(true) {
-        r.notes.push("能解析但出不去：多半被上游防火墙挡了，试 `fy share <设备>`".into());
+        r.notes
+            .push("能解析但出不去：多半被上游防火墙挡了，试 `fy share <设备>`".into());
     }
     if !r.proxy_env.is_empty() && r.proxy_env != "||" {
         r.notes.push(format!("板端已设代理: {}", r.proxy_env));
@@ -482,7 +517,12 @@ pub fn diagnose(d: &Device, count: u32, do_speed: bool) -> NetReport {
 }
 
 pub fn print_report(r: &NetReport) {
-    println!("{} {}  {}", bold("网络体检"), cyan(&r.device), dim(&format!("[{}] {}", r.transport, r.endpoint)));
+    println!(
+        "{} {}  {}",
+        bold("网络体检"),
+        cyan(&r.device),
+        dim(&format!("[{}] {}", r.transport, r.endpoint))
+    );
     println!();
     let mut rows: Vec<Vec<String>> = vec![];
     let l = &r.latency;
@@ -497,7 +537,11 @@ pub fn print_report(r: &NetReport) {
         },
         format!(
             "延迟 {:.1}/{:.1}/{:.1} ms (min/avg/max) 抖动 {:.1} ms 丢失 {:.0}%",
-            l.min_ms, l.avg_ms, l.max_ms, l.jitter_ms, l.loss_pct()
+            l.min_ms,
+            l.avg_ms,
+            l.max_ms,
+            l.jitter_ms,
+            l.loss_pct()
         ),
     ]);
     if !r.iface.is_empty() {
@@ -506,21 +550,44 @@ pub fn print_report(r: &NetReport) {
             r.iface.clone(),
             format!(
                 "MTU {}{}  载波 {}{}",
-                if r.iface_mtu > 0 { r.iface_mtu.to_string() } else { "?".into() },
-                if r.host_mtu > 0 { format!("(主机 {})", r.host_mtu) } else { String::new() },
+                if r.iface_mtu > 0 {
+                    r.iface_mtu.to_string()
+                } else {
+                    "?".into()
+                },
+                if r.host_mtu > 0 {
+                    format!("(主机 {})", r.host_mtu)
+                } else {
+                    String::new()
+                },
                 r.carrier,
-                if r.speed_mbps > 0 { format!("  {} Mb/s", r.speed_mbps) } else { String::new() }
+                if r.speed_mbps > 0 {
+                    format!("  {} Mb/s", r.speed_mbps)
+                } else {
+                    String::new()
+                }
             ),
         ]);
         rows.push(vec![
             "收发错误".into(),
-            if r.rx_err + r.tx_err + r.rx_drop + r.tx_drop == 0 { green("干净") } else { yellow("有") },
-            format!("rx err {} drop {} · tx err {} drop {}", r.rx_err, r.rx_drop, r.tx_err, r.tx_drop),
+            if r.rx_err + r.tx_err + r.rx_drop + r.tx_drop == 0 {
+                green("干净")
+            } else {
+                yellow("有")
+            },
+            format!(
+                "rx err {} drop {} · tx err {} drop {}",
+                r.rx_err, r.rx_drop, r.tx_err, r.tx_drop
+            ),
         ]);
     }
     rows.push(vec![
         "路由".into(),
-        if r.gateway.is_empty() { red("无默认路由") } else { r.gateway.clone() },
+        if r.gateway.is_empty() {
+            red("无默认路由")
+        } else {
+            r.gateway.clone()
+        },
         match r.gw_reachable {
             Some(true) => green("网关可达"),
             Some(false) => red("网关不通"),
@@ -529,7 +596,11 @@ pub fn print_report(r: &NetReport) {
     ]);
     rows.push(vec![
         "DNS".into(),
-        if r.dns_servers.is_empty() { red("未配置") } else { r.dns_servers.join(", ") },
+        if r.dns_servers.is_empty() {
+            red("未配置")
+        } else {
+            r.dns_servers.join(", ")
+        },
         match r.dns_ok {
             Some(true) => green("解析正常"),
             Some(false) => red("解析失败"),
@@ -612,7 +683,10 @@ pub fn report_json(r: &NetReport) -> Vec<(&'static str, J)> {
             "route",
             J::obj(vec![
                 ("gateway", J::s(&r.gateway)),
-                ("gateway_reachable", r.gw_reachable.map(J::b).unwrap_or(J::Null)),
+                (
+                    "gateway_reachable",
+                    r.gw_reachable.map(J::b).unwrap_or(J::Null),
+                ),
             ]),
         ),
         (
@@ -634,7 +708,11 @@ mod tests {
 
     #[test]
     fn loss_math() {
-        let l = Latency { sent: 10, recv: 7, ..Default::default() };
+        let l = Latency {
+            sent: 10,
+            recv: 7,
+            ..Default::default()
+        };
         assert!((l.loss_pct() - 30.0).abs() < 1e-9);
         let z = Latency::default();
         assert_eq!(z.loss_pct(), 0.0);
@@ -668,10 +746,20 @@ mod tests {
 
     #[test]
     fn json_shape_has_the_keys_agents_read() {
-        let r = NetReport { device: "rk".into(), ..Default::default() };
+        let r = NetReport {
+            device: "rk".into(),
+            ..Default::default()
+        };
         let fields = report_json(&r);
         let keys: Vec<&str> = fields.iter().map(|(k, _)| *k).collect();
-        for want in ["device", "reachable", "latency_ms", "bandwidth_bps", "dns", "notes"] {
+        for want in [
+            "device",
+            "reachable",
+            "latency_ms",
+            "bandwidth_bps",
+            "dns",
+            "notes",
+        ] {
             assert!(keys.contains(&want), "缺字段 {}", want);
         }
     }

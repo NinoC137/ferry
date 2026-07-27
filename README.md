@@ -55,6 +55,21 @@ macOS / Linux 都能编。配置存在 `~/.config/ferry/`（`devices.toml` 设�
 
 ---
 
+## 硬件快照与外设简报
+
+fy hw 将目标端的 procfs、sysfs 和 live device tree 回收到稳定的 hardware.json，再在主机端生成面向人的 peripherals.md。采集器只读取，不加载模块、不扫描 I2C/SPI、不改 SELinux 或 sysfs；简报把运行时枚举到的设备和设备树能力线索分开表达。
+
+    fy hw rk --out ./rk-hardware
+    fy hw rk --out ./rk-hardware --max-dt-nodes 1024
+    fy hw rk --out ./rk-hardware --no-brief
+
+结果目录默认包含 hardware.json、peripherals.md，以及目标端有 tar 时的 device-tree.tar。peripherals.md 优先展示板型/SoC、CPU、实际存储、网络、I2C/SPI/USB、UART/显示/相机/PCIe/GPIO 的设备树线索、温度与电源状态；完整的寄存器、时钟、中断和节点属性仍保留在 JSON 与 raw DT archive 中。
+
+已保存的报告无需重连开发板即可重新解释：
+
+    fy hw brief ./rk-hardware/hardware.json
+    fy hw brief ./rk-hardware/hardware.json --out ./comparison.md
+
 ## 5 分钟上手
 
 ```bash

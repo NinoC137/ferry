@@ -295,7 +295,11 @@ mod tests {
             ("a", J::arr(vec![J::b(true), J::Null])),
         ]);
         let d = v.dump();
-        assert!(d.contains("\"n\": 3") && d.contains("\"s\": \"x\"") && d.contains("true"), "{}", d);
+        assert!(
+            d.contains("\"n\": 3") && d.contains("\"s\": \"x\"") && d.contains("true"),
+            "{}",
+            d
+        );
     }
 
     #[test]

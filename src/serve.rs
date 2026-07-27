@@ -50,7 +50,11 @@ fn prefix(token: &str) -> String {
     }
 }
 
-pub fn run(o: ServeOpts, advertise: Vec<(String, String)>, for_dev: Option<&Device>) -> Result<(), String> {
+pub fn run(
+    o: ServeOpts,
+    advertise: Vec<(String, String)>,
+    for_dev: Option<&Device>,
+) -> Result<(), String> {
     for r in &o.roots {
         if !r.exists() {
             return Err(format!("路径不存在: {}", r.display()));
@@ -59,8 +63,12 @@ pub fn run(o: ServeOpts, advertise: Vec<(String, String)>, for_dev: Option<&Devi
     if let Some(u) = &o.upload_dir {
         std::fs::create_dir_all(u).map_err(|e| format!("建不了上传目录 {}: {}", u.display(), e))?;
     }
-    let listener = TcpListener::bind((o.bind.as_str(), o.port))
-        .map_err(|e| format!("绑定 {}:{} 失败（端口被占？换 --port）: {}", o.bind, o.port, e))?;
+    let listener = TcpListener::bind((o.bind.as_str(), o.port)).map_err(|e| {
+        format!(
+            "绑定 {}:{} 失败（端口被占？换 --port）: {}",
+            o.bind, o.port, e
+        )
+    })?;
     let real_port = listener.local_addr().map(|a| a.port()).unwrap_or(o.port);
 
     let pfx = prefix(&o.token);
@@ -104,13 +112,21 @@ fn print_banner(
     if advertise.len() > 1 {
         info("其它可用地址:");
         for (i, ip) in advertise.iter().skip(1) {
-            eprintln!("    {}  {}", dim(i), dim(&format!("http://{}:{}{}", ip, port, pfx)));
+            eprintln!(
+                "    {}  {}",
+                dim(i),
+                dim(&format!("http://{}:{}{}", ip, port, pfx))
+            );
         }
     }
     let names: Vec<String> = o
         .roots
         .iter()
-        .map(|r| r.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| r.display().to_string()))
+        .map(|r| {
+            r.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| r.display().to_string())
+        })
         .collect();
     eprintln!();
     eprintln!("{}", bold("板端可以直接粘贴:"));
@@ -118,13 +134,23 @@ fn print_banner(
         eprintln!("  {}", cyan(&format!("wget -c {}/{}", base, n)));
     }
     if names.len() > 4 {
-        eprintln!("  {}", dim(&format!("... 共 {} 项，浏览目录: {}/", names.len(), base)));
-    }
-    if o.upload_dir.is_some() {
-        eprintln!("  {}   {}", cyan(&format!("curl -T ./板上的文件 {}/up/", base)), dim("（往主机传）"));
         eprintln!(
             "  {}",
-            dim(&format!("没有 curl 就: wget --post-file=./文件 -O- {}/up/文件名", base))
+            dim(&format!("... 共 {} 项，浏览目录: {}/", names.len(), base))
+        );
+    }
+    if o.upload_dir.is_some() {
+        eprintln!(
+            "  {}   {}",
+            cyan(&format!("curl -T ./板上的文件 {}/up/", base)),
+            dim("（往主机传）")
+        );
+        eprintln!(
+            "  {}",
+            dim(&format!(
+                "没有 curl 就: wget --post-file=./文件 -O- {}/up/文件名",
+                base
+            ))
         );
     }
     if let Some(d) = for_dev {
@@ -140,7 +166,12 @@ fn print_banner(
 
 // ---------------- 路由 ----------------
 
-fn route(sh: &Shared, req: Request, reader: BufReader<TcpStream>, mut stream: TcpStream) -> std::io::Result<()> {
+fn route(
+    sh: &Shared,
+    req: Request,
+    reader: BufReader<TcpStream>,
+    mut stream: TcpStream,
+) -> std::io::Result<()> {
     let pfx = prefix(&sh.token);
     let path = match req.path.strip_prefix(&pfx as &str) {
         Some(p) if !pfx.is_empty() => p,
@@ -154,7 +185,13 @@ fn route(sh: &Shared, req: Request, reader: BufReader<TcpStream>, mut stream: Tc
     let decoded = httpd::url_decode(path);
 
     if decoded.starts_with("/up/") || decoded == "/up" {
-        return handle_upload(sh, &req, reader, stream, decoded.trim_start_matches("/up").trim_start_matches('/'));
+        return handle_upload(
+            sh,
+            &req,
+            reader,
+            stream,
+            decoded.trim_start_matches("/up").trim_start_matches('/'),
+        );
     }
     if decoded == "/" {
         return listing(sh, &req, &mut stream);
@@ -162,7 +199,10 @@ fn route(sh: &Shared, req: Request, reader: BufReader<TcpStream>, mut stream: Tc
     match resolve(sh, &decoded) {
         Some(p) if p.is_dir() => dir_listing(&p, &decoded, &pfx, &req, &mut stream),
         Some(p) => {
-            let name = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let name = p
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             let n = httpd::send_file(&mut stream, &p, &req, &name)?;
             sh.hits.fetch_add(1, Ordering::Relaxed);
             info(&format!("↓ {} ({})", name, human_bytes(n)));
@@ -203,7 +243,10 @@ fn resolve(sh: &Shared, decoded: &str) -> Option<PathBuf> {
         return None;
     }
     // 路径穿越防御：先按段过滤，再用 canonicalize 复核
-    if rel.split('/').any(|seg| seg == ".." || seg == "." || seg.is_empty()) {
+    if rel
+        .split('/')
+        .any(|seg| seg == ".." || seg == "." || seg.is_empty())
+    {
         return None;
     }
     let (first, rest) = match rel.split_once('/') {
@@ -240,7 +283,13 @@ fn listing(sh: &Shared, req: &Request, stream: &mut TcpStream) -> std::io::Resul
     render_listing(&rows, "/", &prefix(&sh.token), wants_html(req), stream)
 }
 
-fn dir_listing(dir: &Path, urlpath: &str, pfx: &str, req: &Request, stream: &mut TcpStream) -> std::io::Result<()> {
+fn dir_listing(
+    dir: &Path,
+    urlpath: &str,
+    pfx: &str,
+    req: &Request,
+    stream: &mut TcpStream,
+) -> std::io::Result<()> {
     let mut rows = vec![];
     if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
@@ -258,7 +307,9 @@ fn dir_listing(dir: &Path, urlpath: &str, pfx: &str, req: &Request, stream: &mut
 }
 
 fn wants_html(req: &Request) -> bool {
-    req.header("accept").map(|a| a.contains("text/html")).unwrap_or(false)
+    req.header("accept")
+        .map(|a| a.contains("text/html"))
+        .unwrap_or(false)
 }
 
 /// 目录列表。curl/wget 拿到的是**纯文本、一行一个 URL**（板上可以直接
@@ -279,7 +330,11 @@ fn render_listing(
                 base,
                 name,
                 if *is_dir { "/" } else { "" },
-                if *is_dir { "-".to_string() } else { size.to_string() }
+                if *is_dir {
+                    "-".to_string()
+                } else {
+                    size.to_string()
+                }
             ));
         }
         return httpd::ok_text(stream, &t);
@@ -300,7 +355,11 @@ fn render_listing(
             html_escape(&url_encode(name)),
             html_escape(name),
             if *is_dir { "/" } else { "" },
-            if *is_dir { "".into() } else { human_bytes(*size) }
+            if *is_dir {
+                "".into()
+            } else {
+                human_bytes(*size)
+            }
         ));
     }
     h.push_str("</table>");
@@ -312,7 +371,9 @@ fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(*b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
             _ => out.push_str(&format!("%{:02X}", b)),
         }
     }
@@ -320,7 +381,10 @@ fn url_encode(s: &str) -> String {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ---------------- 上传 ----------------
@@ -337,7 +401,11 @@ fn handle_upload(
         None => return httpd::bad(&mut stream, "403 Forbidden", "这个 serve 没开 --upload"),
     };
     if req.method != "PUT" && req.method != "POST" {
-        return httpd::bad(&mut stream, "405 Method Not Allowed", "上传请用 PUT 或 POST");
+        return httpd::bad(
+            &mut stream,
+            "405 Method Not Allowed",
+            "上传请用 PUT 或 POST",
+        );
     }
     // 文件名只取最后一段，且不许带路径分隔符
     let mut name = httpd::url_decode(name_hint);
@@ -393,7 +461,12 @@ fn handle_upload(
     }
     f.flush()?;
     sh.hits.fetch_add(1, Ordering::Relaxed);
-    ok(&format!("↑ 收到 {} ({}) → {}", name, human_bytes(written), dest.display()));
+    ok(&format!(
+        "↑ 收到 {} ({}) → {}",
+        name,
+        human_bytes(written),
+        dest.display()
+    ));
     httpd::ok_text(&mut stream, &format!("ok {} {}\n", name, written))
 }
 
@@ -462,8 +535,20 @@ pub struct ServeCli {
 }
 
 pub fn serve_cmd(cli: ServeCli, for_dev: Option<&Device>) -> i32 {
-    let ServeCli { roots, port, bind, upload, token: token_opt, no_token, once } = cli;
-    let roots = if roots.is_empty() { vec![PathBuf::from(".")] } else { roots };
+    let ServeCli {
+        roots,
+        port,
+        bind,
+        upload,
+        token: token_opt,
+        no_token,
+        once,
+    } = cli;
+    let roots = if roots.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        roots
+    };
     let token = if no_token {
         String::new()
     } else {
@@ -488,7 +573,14 @@ pub fn serve_cmd(cli: ServeCli, for_dev: Option<&Device>) -> i32 {
     }
 
     let bind = bind.unwrap_or_else(|| "0.0.0.0".into());
-    let o = ServeOpts { port, bind, roots, upload_dir: upload, token, once };
+    let o = ServeOpts {
+        port,
+        bind,
+        roots,
+        upload_dir: upload,
+        token,
+        once,
+    };
 
     if crate::jsonout::json_mode() {
         // JSON 模式不能常驻阻塞（agent 等不到结果），改成"给出计划"再后台起
@@ -585,7 +677,10 @@ mod tests {
             once: false,
         };
         assert!(resolve(&sh, "/build/only_a.txt").is_some());
-        assert!(resolve(&sh, "/build-2/only_b.txt").is_some(), "第二个 root 也得够得着");
+        assert!(
+            resolve(&sh, "/build-2/only_b.txt").is_some(),
+            "第二个 root 也得够得着"
+        );
         // 交叉访问要落空
         assert!(resolve(&sh, "/build/only_b.txt").is_none());
         let _ = std::fs::remove_dir_all(&tmp);
@@ -609,7 +704,10 @@ mod tests {
 
     #[test]
     fn plain_listing_is_wget_friendly() {
-        let rows = vec![("a.bin".to_string(), 1024u64, false), ("d".to_string(), 0, true)];
+        let rows = vec![
+            ("a.bin".to_string(), 1024u64, false),
+            ("d".to_string(), 0, true),
+        ];
         let mut out: Vec<u8> = vec![];
         // 直接检验文本渲染的形状（不经 TcpStream）
         let base = "/tok";
@@ -620,7 +718,11 @@ mod tests {
                     base,
                     name,
                     if *is_dir { "/" } else { "" },
-                    if *is_dir { "-".to_string() } else { size.to_string() }
+                    if *is_dir {
+                        "-".to_string()
+                    } else {
+                        size.to_string()
+                    }
                 )
                 .as_bytes(),
             );

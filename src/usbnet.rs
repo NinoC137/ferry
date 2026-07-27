@@ -40,7 +40,11 @@ pub fn local_ip_on(ifname: &str) -> Option<String> {
     #[cfg(target_os = "macos")]
     let out = run_capture(&argv(&["ifconfig", ifname]), &[]).ok()?;
     #[cfg(not(target_os = "macos"))]
-    let out = run_capture(&argv(&["ip", "-o", "-4", "addr", "show", "dev", ifname]), &[]).ok()?;
+    let out = run_capture(
+        &argv(&["ip", "-o", "-4", "addr", "show", "dev", ifname]),
+        &[],
+    )
+    .ok()?;
     for line in out.stdout.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("inet ") {
@@ -95,7 +99,9 @@ pub fn default_iface() -> Option<String> {
     {
         let o = run_capture(&argv(&["ip", "route", "show", "default"]), &[]).ok()?;
         let toks: Vec<&str> = o.stdout.split_whitespace().collect();
-        toks.iter().position(|t| *t == "dev").map(|i| toks[i + 1].to_string())
+        toks.iter()
+            .position(|t| *t == "dev")
+            .map(|i| toks[i + 1].to_string())
     }
 }
 
@@ -116,7 +122,9 @@ pub fn route_iface_for(ip: &str) -> Option<(String, String)> {
     let ifname = {
         let o = run_capture(&argv(&["ip", "route", "get", ip]), &[]).ok()?;
         let toks: Vec<&str> = o.stdout.split_whitespace().collect();
-        toks.iter().position(|t| *t == "dev").map(|i| toks[i + 1].to_string())?
+        toks.iter()
+            .position(|t| *t == "dev")
+            .map(|i| toks[i + 1].to_string())?
     };
     // 网段推测：ferry 的 /30 优先，否则按 /24 报
     let subnet = if ip.starts_with("10.55.0.") {
@@ -155,17 +163,44 @@ pub fn usb_net(cfg: &mut Config, share: bool, add_as: Option<String>) -> Result<
                 break;
             }
         }
-        found.ok_or("30 秒内没等到新网口。检查线缆/板端 gadget 是否启动（fy usb gadget 生成脚本）")?
+        found
+            .ok_or("30 秒内没等到新网口。检查线缆/板端 gadget 是否启动（fy usb gadget 生成脚本）")?
     };
     ok(&format!("发现新网口: {}", newif));
 
-    info(&format!("给 {} 配地址 {}/30（需要 sudo）...", newif, HOST_IP));
+    info(&format!(
+        "给 {} 配地址 {}/30（需要 sudo）...",
+        newif, HOST_IP
+    ));
     #[cfg(target_os = "macos")]
-    let st = run_inherit(&argv(&["sudo", "ifconfig", &newif, "inet", HOST_IP, "netmask", "255.255.255.252", "up"]), &[]);
+    let st = run_inherit(
+        &argv(&[
+            "sudo",
+            "ifconfig",
+            &newif,
+            "inet",
+            HOST_IP,
+            "netmask",
+            "255.255.255.252",
+            "up",
+        ]),
+        &[],
+    );
     #[cfg(not(target_os = "macos"))]
     let st = (|| {
         let _ = run_inherit(&argv(&["sudo", "ip", "addr", "flush", "dev", &newif]), &[]);
-        let _ = run_inherit(&argv(&["sudo", "ip", "addr", "add", &format!("{}/30", HOST_IP), "dev", &newif]), &[]);
+        let _ = run_inherit(
+            &argv(&[
+                "sudo",
+                "ip",
+                "addr",
+                "add",
+                &format!("{}/30", HOST_IP),
+                "dev",
+                &newif,
+            ]),
+            &[],
+        );
         run_inherit(&argv(&["sudo", "ip", "link", "set", &newif, "up"]), &[])
     })();
     if st.map_err(|e| e.to_string())? != 0 && !dry() {
@@ -176,7 +211,12 @@ pub fn usb_net(cfg: &mut Config, share: bool, add_as: Option<String>) -> Result<
     let mut ssh_ok = false;
     if !dry() {
         for _ in 0..30 {
-            if TcpStream::connect_timeout(&format!("{}:22", BOARD_IP).parse().unwrap(), Duration::from_millis(400)).is_ok() {
+            if TcpStream::connect_timeout(
+                &format!("{}:22", BOARD_IP).parse().unwrap(),
+                Duration::from_millis(400),
+            )
+            .is_ok()
+            {
                 ssh_ok = true;
                 break;
             }
@@ -186,7 +226,10 @@ pub fn usb_net(cfg: &mut Config, share: bool, add_as: Option<String>) -> Result<
     if ssh_ok {
         ok(&format!("板子 ssh 可达: {}:22", BOARD_IP));
     } else if !dry() {
-        warn(&format!("{}:22 暂不可达（板端没起 sshd？串口跑一下 ferry-gadget.sh 看输出）", BOARD_IP));
+        warn(&format!(
+            "{}:22 暂不可达（板端没起 sshd？串口跑一下 ferry-gadget.sh 看输出）",
+            BOARD_IP
+        ));
     }
 
     // 顺手建档
@@ -201,9 +244,15 @@ pub fn usb_net(cfg: &mut Config, share: bool, add_as: Option<String>) -> Result<
         d.port = 22;
         cfg.devices.insert(name.clone(), d);
         cfg.save().map_err(|e| e.to_string())?;
-        ok(&format!("档案已更新: {} → ssh {}@{}", name, "root", BOARD_IP));
+        ok(&format!(
+            "档案已更新: {} → ssh {}@{}",
+            name, "root", BOARD_IP
+        ));
     } else if ssh_ok && !cfg.devices.values().any(|d| d.host == BOARD_IP) {
-        info(&format!("提示: fy add <名字> --ssh root@{} 建档，之后 fy sh <名字> 直连", BOARD_IP));
+        info(&format!(
+            "提示: fy add <名字> --ssh root@{} 建档，之后 fy sh <名字> 直连",
+            BOARD_IP
+        ));
     }
 
     if share {
@@ -221,7 +270,10 @@ pub fn nat_enable(subnet: &str) -> std::io::Result<()> {
     info(&format!("开启 NAT: {} → {}（需要 sudo）", subnet, ext));
     #[cfg(target_os = "macos")]
     {
-        let _ = run_inherit(&argv(&["sudo", "sysctl", "-w", "net.inet.ip.forwarding=1"]), &[])?;
+        let _ = run_inherit(
+            &argv(&["sudo", "sysctl", "-w", "net.inet.ip.forwarding=1"]),
+            &[],
+        )?;
         // 在 Apple 原始 pf.conf 的翻译规则区插入我们的 nat，保住系统规则
         let orig = slurp(std::path::Path::new("/etc/pf.conf"));
         let nat_line = format!("nat on {ext} from {subnet} to any -> ({ext})\n");
@@ -245,26 +297,68 @@ pub fn nat_enable(subnet: &str) -> std::io::Result<()> {
         };
         let tmp = std::env::temp_dir().join("ferry-pf.conf");
         std::fs::write(&tmp, conf)?;
-        let _ = run_inherit(&argv(&["sudo", "pfctl", "-E", "-f", &tmp.display().to_string()]), &[])?;
+        let _ = run_inherit(
+            &argv(&["sudo", "pfctl", "-E", "-f", &tmp.display().to_string()]),
+            &[],
+        )?;
         ok("pf NAT 已加载（fy share --off 恢复系统原始规则）");
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = run_inherit(&argv(&["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"]), &[])?;
+        let _ = run_inherit(
+            &argv(&["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"]),
+            &[],
+        )?;
         let check = run_capture(
-            &argv(&["sudo", "iptables", "-t", "nat", "-C", "POSTROUTING", "-s", subnet, "-o", &ext, "-j", "MASQUERADE"]),
+            &argv(&[
+                "sudo",
+                "iptables",
+                "-t",
+                "nat",
+                "-C",
+                "POSTROUTING",
+                "-s",
+                subnet,
+                "-o",
+                &ext,
+                "-j",
+                "MASQUERADE",
+            ]),
             &[],
         )?;
         if check.status != 0 {
             let _ = run_inherit(
-                &argv(&["sudo", "iptables", "-t", "nat", "-A", "POSTROUTING", "-s", subnet, "-o", &ext, "-j", "MASQUERADE"]),
+                &argv(&[
+                    "sudo",
+                    "iptables",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-s",
+                    subnet,
+                    "-o",
+                    &ext,
+                    "-j",
+                    "MASQUERADE",
+                ]),
                 &[],
             )?;
         }
         for dir in [["-s", subnet], ["-d", subnet]] {
-            let c = run_capture(&argv(&["sudo", "iptables", "-C", "FORWARD", dir[0], dir[1], "-j", "ACCEPT"]), &[])?;
+            let c = run_capture(
+                &argv(&[
+                    "sudo", "iptables", "-C", "FORWARD", dir[0], dir[1], "-j", "ACCEPT",
+                ]),
+                &[],
+            )?;
             if c.status != 0 {
-                let _ = run_inherit(&argv(&["sudo", "iptables", "-A", "FORWARD", dir[0], dir[1], "-j", "ACCEPT"]), &[])?;
+                let _ = run_inherit(
+                    &argv(&[
+                        "sudo", "iptables", "-A", "FORWARD", dir[0], dir[1], "-j", "ACCEPT",
+                    ]),
+                    &[],
+                )?;
             }
         }
         ok("iptables NAT 已配置");
@@ -291,11 +385,34 @@ pub fn nat_disable() -> std::io::Result<()> {
     {
         let ext = default_iface().unwrap_or_else(|| "en0".into());
         let _ = run_capture(
-            &argv(&["sudo", "iptables", "-t", "nat", "-D", "POSTROUTING", "-s", &subnet, "-o", &ext, "-j", "MASQUERADE"]),
+            &argv(&[
+                "sudo",
+                "iptables",
+                "-t",
+                "nat",
+                "-D",
+                "POSTROUTING",
+                "-s",
+                &subnet,
+                "-o",
+                &ext,
+                "-j",
+                "MASQUERADE",
+            ]),
             &[],
         );
-        let _ = run_capture(&argv(&["sudo", "iptables", "-D", "FORWARD", "-s", &subnet, "-j", "ACCEPT"]), &[]);
-        let _ = run_capture(&argv(&["sudo", "iptables", "-D", "FORWARD", "-d", &subnet, "-j", "ACCEPT"]), &[]);
+        let _ = run_capture(
+            &argv(&[
+                "sudo", "iptables", "-D", "FORWARD", "-s", &subnet, "-j", "ACCEPT",
+            ]),
+            &[],
+        );
+        let _ = run_capture(
+            &argv(&[
+                "sudo", "iptables", "-D", "FORWARD", "-d", &subnet, "-j", "ACCEPT",
+            ]),
+            &[],
+        );
         ok("已移除 iptables NAT 规则");
     }
     st.drop_table("nat");
@@ -306,11 +423,17 @@ pub fn nat_disable() -> std::io::Result<()> {
 // ---------------- gadget 脚本 ----------------
 
 pub fn gadget_emit(out: Option<&str>, mode: &str) -> std::io::Result<()> {
-    let script = GADGET_SH.replace("MODE=\"${MODE:-ncm}\"", &format!("MODE=\"${{MODE:-{}}}\"", mode));
+    let script = GADGET_SH.replace(
+        "MODE=\"${MODE:-ncm}\"",
+        &format!("MODE=\"${{MODE:-{}}}\"", mode),
+    );
     match out {
         Some(p) => {
             std::fs::write(p, &script)?;
-            let _ = std::process::Command::new("chmod").arg("755").arg(p).status();
+            let _ = std::process::Command::new("chmod")
+                .arg("755")
+                .arg(p)
+                .status();
             ok(&format!("已生成 {}（推到板上: fy usb install <设备>）", p));
         }
         None => {
@@ -322,17 +445,28 @@ pub fn gadget_emit(out: Option<&str>, mode: &str) -> std::io::Result<()> {
 
 /// 推送 gadget 脚本到板上并（可选）注册开机自启。
 pub fn gadget_install(d: &Device, mode: &str, autostart: bool) -> Result<(), String> {
-    let script = GADGET_SH.replace("MODE=\"${MODE:-ncm}\"", &format!("MODE=\"${{MODE:-{}}}\"", mode));
+    let script = GADGET_SH.replace(
+        "MODE=\"${MODE:-ncm}\"",
+        &format!("MODE=\"${{MODE:-{}}}\"", mode),
+    );
     let path = "/usr/local/bin/ferry-gadget.sh";
     let okk = match d.transport {
-        Transport::Ssh => sshx::write_remote_file(d, path, &script, "755").map_err(|e| e.to_string())?,
+        Transport::Ssh => {
+            sshx::write_remote_file(d, path, &script, "755").map_err(|e| e.to_string())?
+        }
         Transport::Adb => {
             let tmp = std::env::temp_dir().join("ferry-gadget.sh");
             std::fs::write(&tmp, &script).map_err(|e| e.to_string())?;
             crate::adbx::push(d, &tmp, path).map_err(|e| e.to_string())?
-                && crate::adbx::exec_capture(d, &format!("chmod 755 {}", path)).map(|o| o.status == 0).unwrap_or(false)
+                && crate::adbx::exec_capture(d, &format!("chmod 755 {}", path))
+                    .map(|o| o.status == 0)
+                    .unwrap_or(false)
         }
-        Transport::Serial => return Err("串口通道推脚本太慢，先 fy up 打通网络，或 fy usb gadget --out 拷出去手动放".into()),
+        Transport::Serial => {
+            return Err(
+                "串口通道推脚本太慢，先 fy up 打通网络，或 fy usb gadget --out 拷出去手动放".into(),
+            )
+        }
     };
     if !okk && !dry() {
         return Err("脚本推送失败".into());
@@ -370,7 +504,10 @@ pub fn gadget_install(d: &Device, mode: &str, autostart: bool) -> Result<(), Str
             warn("没识别出板上的 init 系统，请手动把 ferry-gadget.sh start 挂到开机脚本");
         }
     } else {
-        info(&format!("板上手动启动: {} start   （加 --autostart 注册开机自启）", path));
+        info(&format!(
+            "板上手动启动: {} start   （加 --autostart 注册开机自启）",
+            path
+        ));
     }
     Ok(())
 }

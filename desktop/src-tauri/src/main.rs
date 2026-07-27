@@ -328,7 +328,11 @@ fn workflow_execute(request: WorkflowRequest) -> Result<OperationResult, String>
         "gadget-install" => ferry::usbnet::gadget_install(&device, &request.mode, request.persist)?,
         _ => return Err("Unknown workflow.".into()),
     }
-    Ok(OperationResult { ok: true, detail: format!("{} workflow completed for {}.", request.kind, request.device) })
+    let verification = Config::load()
+        .find(&request.device)
+        .map(|device| probe_device(&device).detail)
+        .unwrap_or_else(|| "Profile changed; select it again to verify its new endpoint.".into());
+    Ok(OperationResult { ok: true, detail: format!("{} workflow completed for {}. Verification: {}", request.kind, request.device, verification) })
 }
 
 fn session_token(sequence: u64) -> String {
@@ -632,6 +636,16 @@ fn main() {
             get_device,
             save_device,
             check_connection,
+            transfer,
+            list_forwards,
+            add_forward,
+            remove_forward,
+            top_snapshot,
+            blackboxes,
+            set_blackbox,
+            blackbox_blame,
+            workflow_preview,
+            workflow_execute,
             start_terminal,
         ])
         .run(tauri::generate_context!())

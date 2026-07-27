@@ -26,7 +26,11 @@ impl SerialSession {
     pub fn open(port: &str, baud: u32) -> std::io::Result<SerialSession> {
         let f = serialx::open_port(port, baud)?;
         let r = f.try_clone()?;
-        Ok(SerialSession { w: f, exp: Expecter::new(r), n: 0 })
+        Ok(SerialSession {
+            w: f,
+            exp: Expecter::new(r),
+            n: 0,
+        })
     }
 
     fn send(&mut self, s: &str) {
@@ -38,7 +42,11 @@ impl SerialSession {
         self.n += 1;
         let mb = format!("FMK{}B", self.n);
         let me = format!("FMK{}E", self.n);
-        let line = format!("echo FMK{n}\"B\"; {c}; echo FMK{n}\"E\"$?", n = self.n, c = cmd);
+        let line = format!(
+            "echo FMK{n}\"B\"; {c}; echo FMK{n}\"E\"$?",
+            n = self.n,
+            c = cmd
+        );
         let start = self.exp.transcript.len();
         self.send(&line);
         let deadline = std::time::Instant::now() + timeout;
@@ -70,9 +78,16 @@ impl SerialSession {
     pub fn login(&mut self, user: &str, pass: &str, boot_ok: bool) -> Result<(), String> {
         // 0=password 1=incorrect 2=login: 3=username: 4="# " 5="$ " 6=bootloader
         let pats = [
-            "password:", "incorrect", "login:", "username:", "# ", "$ ", "autoboot",
+            "password:",
+            "incorrect",
+            "login:",
+            "username:",
+            "# ",
+            "$ ",
+            "autoboot",
         ];
-        let deadline = std::time::Instant::now() + Duration::from_secs(if boot_ok { 90 } else { 25 });
+        let deadline =
+            std::time::Instant::now() + Duration::from_secs(if boot_ok { 90 } else { 25 });
         let mut nudges = 0;
         loop {
             if std::time::Instant::now() >= deadline {
@@ -93,7 +108,11 @@ impl SerialSession {
                     let mu = self.exp.mark();
                     self.send(user);
                     // 只等"发用户名之后"的 password / shell，忽略之前那条 login:
-                    match self.exp.expect_from(mu, &["password:", "# ", "$ ", "incorrect"], Duration::from_secs(6)) {
+                    match self.exp.expect_from(
+                        mu,
+                        &["password:", "# ", "$ ", "incorrect"],
+                        Duration::from_secs(6),
+                    ) {
                         Some(0) => return self.do_password(pass),
                         Some(1) => return Err("用户名/密码不对".into()),
                         Some(_) => return self.verify_shell(),
@@ -106,7 +125,11 @@ impl SerialSession {
                         step("检测到 bootloader，发 boot 引导内核（最多等 60s）...");
                         let mb = self.exp.mark();
                         self.send("boot");
-                        let _ = self.exp.expect_from(mb, &["login:", "# ", "$ "], Duration::from_secs(60));
+                        let _ = self.exp.expect_from(
+                            mb,
+                            &["login:", "# ", "$ "],
+                            Duration::from_secs(60),
+                        );
                     } else {
                         return Err("板子停在 bootloader（U-Boot）。确认要引导就加 --boot".into());
                     }
@@ -130,9 +153,15 @@ impl SerialSession {
         step("发密码");
         let m = self.exp.mark();
         self.send(pass);
-        let r = self.exp.expect_from(m, &["incorrect", "denied", "failure", "login:", "# ", "$ "], Duration::from_secs(6));
+        let r = self.exp.expect_from(
+            m,
+            &["incorrect", "denied", "failure", "login:", "# ", "$ "],
+            Duration::from_secs(6),
+        );
         match r {
-            Some(0) | Some(1) | Some(2) | Some(3) => Err("密码不对（fy add 或 devices.toml 里改 password）".into()),
+            Some(0) | Some(1) | Some(2) | Some(3) => {
+                Err("密码不对（fy add 或 devices.toml 里改 password）".into())
+            }
             Some(_) => self.verify_shell(),
             None => self.verify_shell(), // 可能是无回显的静默 shell
         }
@@ -143,7 +172,11 @@ impl SerialSession {
         for _ in 0..2 {
             let m = self.exp.mark();
             self.send("echo FERRYOK$((1+1))");
-            if self.exp.expect_from(m, &["FERRYOK2"], Duration::from_secs(3)).is_some() {
+            if self
+                .exp
+                .expect_from(m, &["FERRYOK2"], Duration::from_secs(3))
+                .is_some()
+            {
                 return Ok(());
             }
         }
@@ -184,7 +217,9 @@ fn host_pubkey() -> Option<String> {
 }
 
 pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
-    let d = cfg.find(name).ok_or_else(|| format!("没有设备 '{}'", name))?;
+    let d = cfg
+        .find(name)
+        .ok_or_else(|| format!("没有设备 '{}'", name))?;
     println!("{}", bold(&format!("fy up {} — 通道爬升", d.name)));
 
     // 0) 已经是可达的 ssh？
@@ -242,11 +277,19 @@ pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
         })
         .ok_or("没有串口可用（fy add 时加 --serial /dev/xxx，或 fy scan 看看）")?;
     if dry() {
-        println!("{} 串口自动登录 {} @{} → 探测板况 → 配网 → 爬升 ssh（dry-run 不实际操作串口）", magenta("DRY→"), port, d.baud);
+        println!(
+            "{} 串口自动登录 {} @{} → 探测板况 → 配网 → 爬升 ssh（dry-run 不实际操作串口）",
+            magenta("DRY→"),
+            port,
+            d.baud
+        );
         return Ok(());
     }
     if crate::blackbox::running_for(&d.name) {
-        return Err(format!("黑匣子占着串口。fy bb stop {} 后再 up（之后可再开）", d.name));
+        return Err(format!(
+            "黑匣子占着串口。fy bb stop {} 后再 up（之后可再开）",
+            d.name
+        ));
     }
     step(&format!("打开串口 {} @{}", port, d.baud));
     let mut ss = SerialSession::open(&port, d.baud).map_err(|e| format!("开串口失败: {}", e))?;
@@ -259,14 +302,21 @@ pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
     let mut facts = fingerprint::collect(&mut ss);
     step(&format!(
         "认识你了: {} {} ({})",
-        if facts.hostname.is_empty() { "?" } else { &facts.hostname },
+        if facts.hostname.is_empty() {
+            "?"
+        } else {
+            &facts.hostname
+        },
         facts.kernel,
         facts.arch
     ));
 
     // 3) 板上网络自查
     step("看看板子有没有 IP ...");
-    let (ipout, _) = ss.run("ip -4 addr 2>/dev/null || ifconfig 2>/dev/null", Duration::from_secs(5));
+    let (ipout, _) = ss.run(
+        "ip -4 addr 2>/dev/null || ifconfig 2>/dev/null",
+        Duration::from_secs(5),
+    );
     let mut board_ips: Vec<String> = vec![];
     for line in ipout.lines() {
         if let Some(ip) = crate::adbx::extract_ipv4(line) {
@@ -333,12 +383,39 @@ pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
             }
         }
         if let Some(nif) = newif {
-            step(&format!("主机新网口 {}，配 {}（sudo）", nif, usbnet::HOST_IP));
+            step(&format!(
+                "主机新网口 {}，配 {}（sudo）",
+                nif,
+                usbnet::HOST_IP
+            ));
             #[cfg(target_os = "macos")]
-            let _ = run_inherit(&argv(&["sudo", "ifconfig", &nif, "inet", usbnet::HOST_IP, "netmask", "255.255.255.252", "up"]), &[]);
+            let _ = run_inherit(
+                &argv(&[
+                    "sudo",
+                    "ifconfig",
+                    &nif,
+                    "inet",
+                    usbnet::HOST_IP,
+                    "netmask",
+                    "255.255.255.252",
+                    "up",
+                ]),
+                &[],
+            );
             #[cfg(not(target_os = "macos"))]
             {
-                let _ = run_inherit(&argv(&["sudo", "ip", "addr", "add", &format!("{}/30", usbnet::HOST_IP), "dev", &nif]), &[]);
+                let _ = run_inherit(
+                    &argv(&[
+                        "sudo",
+                        "ip",
+                        "addr",
+                        "add",
+                        &format!("{}/30", usbnet::HOST_IP),
+                        "dev",
+                        &nif,
+                    ]),
+                    &[],
+                );
                 let _ = run_inherit(&argv(&["sudo", "ip", "link", "set", &nif, "up"]), &[]);
             }
             if !has_sshd {
@@ -351,7 +428,10 @@ pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
                     }
                     std::thread::sleep(Duration::from_millis(500));
                 }
-                warn(&format!("{}:22 没等到 —— 看看板端 sshd 日志", usbnet::BOARD_IP));
+                warn(&format!(
+                    "{}:22 没等到 —— 看看板端 sshd 日志",
+                    usbnet::BOARD_IP
+                ));
             }
         } else {
             warn("主机没看到新网口（线是数据线吗？板子的 device 口接对了吗？）");
@@ -361,10 +441,16 @@ pub fn up(cfg: &mut Config, name: &str, boot_ok: bool) -> Result<(), String> {
     }
 
     // 3c) 以太网口 DHCP 尝试
-    let (eth, _) = ss.run("ls /sys/class/net 2>/dev/null | grep -E '^(eth|end|enp)' | head -1", Duration::from_secs(4));
+    let (eth, _) = ss.run(
+        "ls /sys/class/net 2>/dev/null | grep -E '^(eth|end|enp)' | head -1",
+        Duration::from_secs(4),
+    );
     let eth = eth.trim().to_string();
     if !eth.is_empty() {
-        step(&format!("板子有网口 {}，插着网线的话试试 DHCP（10s）...", eth));
+        step(&format!(
+            "板子有网口 {}，插着网线的话试试 DHCP（10s）...",
+            eth
+        ));
         let (out, _) = ss.run(
             &format!("ip link set {e} up 2>/dev/null; (udhcpc -i {e} -n -q -t 5 2>/dev/null || dhclient -1 {e} 2>/dev/null); ip -4 addr show {e} 2>/dev/null || ifconfig {e}", e = eth),
             Duration::from_secs(20),
@@ -429,7 +515,10 @@ fn promote_to_ssh(
         "爬升完成: {} 现在走 ssh {}@{}:{}（串口档案保留作兜底）",
         dd.name, dd.user, dd.host, dd.port
     ));
-    info(&format!("试试: fy sh {}   fy push {} <文件>   fy share {}（借主机上网）", dd.name, dd.name, dd.name));
+    info(&format!(
+        "试试: fy sh {}   fy push {} <文件>   fy share {}（借主机上网）",
+        dd.name, dd.name, dd.name
+    ));
     after_ssh_ready(cfg, &dd, facts)?;
     Ok(())
 }

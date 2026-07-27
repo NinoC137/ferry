@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { checkConnection, getDevice, listDevices, saveDevice } from "./bridge";
+import { OperationsPanel } from "./OperationsPanel";
 import { TerminalPane } from "./TerminalPane";
 import type { DeviceForm, DeviceSummary } from "./types";
 import { newDevice } from "./types";
@@ -32,6 +33,8 @@ interface TerminalTab {
   id: string;
   deviceName: string;
   sessionId: string;
+  title?: string;
+  command?: string;
 }
 
 const iconForTransport = (transport: string) => {
@@ -49,6 +52,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>(["Desktop workspace ready."]);
   const [busy, setBusy] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
+  const [view, setView] = useState<"terminal" | "operations">("terminal");
 
   const addActivity = useCallback((message: string) => {
     setActivity((entries) => [`${new Date().toLocaleTimeString()}  ${message}`, ...entries].slice(0, 30));
@@ -120,6 +124,15 @@ function App() {
     const id = `pending-${Date.now()}`;
     setTabs((current) => [...current, { id, deviceName: selected, sessionId: "" }]);
     setActiveTab(id);
+    setView("terminal");
+  };
+
+  const openTask = (title: string, command: string) => {
+    if (!selected) return;
+    const id = `task-${Date.now()}`;
+    setTabs((current) => [...current, { id, deviceName: selected, sessionId: "", title, command }]);
+    setActiveTab(id);
+    setView("terminal");
   };
 
   const started = useCallback((tabId: string, sessionId: string) => {
@@ -169,8 +182,8 @@ function App() {
           <div className="action-grid">
             <button onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Shell</button>
             <button onClick={testConnection} disabled={!selected}><CircleCheck size={16} />Probe</button>
-            <button disabled title="Deployment workspace arrives after terminal P1"><Clipboard size={16} />Deploy</button>
-            <button disabled title="Network workflows arrive after terminal P1"><Network size={16} />Share</button>
+            <button onClick={() => setView("operations")} disabled={!selected}><Clipboard size={16} />Deploy</button>
+            <button onClick={() => setView("operations")} disabled={!selected}><Network size={16} />Share</button>
           </div>
         </section>
 
@@ -202,19 +215,22 @@ function App() {
           </div>
           <div className="header-tools">
             {connectionMessage && <span className="connection-message">{connectionMessage}</span>}
+            <button className={`header-mode ${view === "operations" ? "active" : ""}`} title="Open operations workbench" onClick={() => setView("operations")}><Clipboard size={16} /></button>
             <button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />New terminal</button>
           </div>
         </header>
 
         <div className="tab-strip" role="tablist" aria-label="Terminal sessions">
-          {tabs.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} className={`terminal-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => setActiveTab(tab.id)}><TerminalSquare size={14} />{tab.deviceName}<span className="tab-close" title="Close terminal" onClick={(event) => { event.stopPropagation(); closeTab(tab.id); }}><X size={13} /></span></button>)}
+          {tabs.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} className={`terminal-tab ${activeTab === tab.id && view === "terminal" ? "active" : ""}`} onClick={() => { setActiveTab(tab.id); setView("terminal"); }}><TerminalSquare size={14} />{tab.title || tab.deviceName}<span className="tab-close" title="Close terminal" onClick={(event) => { event.stopPropagation(); closeTab(tab.id); }}><X size={13} /></span></button>)}
           {!tabs.length && <span className="tab-hint">Interactive sessions</span>}
         </div>
 
         <div className="workspace-body">
           <div className="terminal-stage">
-            {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} active={activeTab === tab.id} onStarted={started} onActivity={addActivity} /></div>)}
-            {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
+            {view === "operations" ? <OperationsPanel device={selected} onActivity={addActivity} onOpenTask={openTask} /> : <>
+              {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id} onStarted={started} onActivity={addActivity} /></div>)}
+              {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
+            </>}
           </div>
           <aside className="activity-panel">
             <div className="activity-title"><Activity size={16} />Activity</div>
