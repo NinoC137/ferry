@@ -10,6 +10,7 @@ mod doctor;
 mod fingerprint;
 mod fwd;
 mod hash;
+mod hwprobe;
 mod httpd;
 mod jsonout;
 mod logs;
@@ -85,7 +86,7 @@ fn known_command(s: &str) -> bool {
         s,
         "ls" | "add" | "rm" | "sh" | "push" | "pull" | "cp" | "run" | "debug" | "fwd" | "share" | "scan"
             | "usb" | "up" | "sync" | "log" | "top" | "info" | "blame" | "bb" | "all" | "keyup" | "forget"
-            | "wifi" | "doctor" | "fix" | "ui" | "serve" | "net" | "watch" | "proxy" | "help" | "-h" | "--help"
+            | "wifi" | "doctor" | "fix" | "ui" | "serve" | "net" | "watch" | "proxy" | "hw" | "help" | "-h" | "--help"
     )
 }
 
@@ -136,6 +137,7 @@ fn dispatch(args: Vec<String>) -> i32 {
         "net" => cmd_net(tail),
         "watch" => cmd_watch(tail),
         "proxy" => cmd_proxy(tail),
+        "hw" => cmd_hw(tail),
         // 内部入口
         "__askpass" => sshx::askpass_main(tail.first().map(|s| s.as_str()).unwrap_or("")),
         "__proxyd" => {
@@ -175,7 +177,7 @@ fn json_capable(cmd: &str) -> bool {
         cmd,
         "" | "ls" | "add" | "rm" | "sh" | "push" | "pull" | "cp" | "fwd" | "share" | "proxy" | "watch"
             | "net" | "scan" | "info" | "all" | "bb" | "blame" | "keyup" | "forget" | "wifi" | "doctor"
-            | "fix" | "help" | "-h" | "--help" | "serve"
+            | "fix" | "help" | "-h" | "--help" | "serve" | "hw"
     )
 }
 
@@ -1204,6 +1206,84 @@ fn cmd_info(args: Vec<String>) -> i32 {
     0
 }
 
+fn cmd_hw(args: Vec<String>) -> i32 {
+    let pos = positional(&args, &["--out", "--max-dt-nodes"]);
+    if pos.first().map(|s| s.as_str()) == Some("agent") {
+        let out = match flag_val(&args, "--out") {
+            Some(v) => PathBuf::from(v),
+            None => return fail(code::USAGE, "用法: fy hw agent --out ./hwprobe.sh"),
+        };
+        if out.exists() {
+            return fail(code::CONFIG, &format!("目标文件已存在: {}", out.display()));
+        }
+        if let Some(parent) = out.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return fail(code::CONFIG, &format!("不能创建输出目录: {}", e));
+            }
+        }
+        if let Err(e) = std::fs::write(&out, hwprobe::SCRIPT) {
+            return fail(code::CONFIG, &format!("写 hwprobe agent 失败: {}", e));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o755));
+        }
+        if jsonout::json_mode() {
+            return jsonout::emit_ok(vec![("agent", J::s(out.display().to_string()))]);
+        }
+        ok(&format!("已导出目标端采集器: {}", out.display()));
+        return 0;
+    }
+    if pos.is_empty() {
+        return fail_hint(
+            code::USAGE,
+            "用法: fy hw <设备> [--out 目录] [--no-bundle] [--keep-remote] [--include-identifiers] [--max-dt-nodes N]",
+            Some("默认只读采集并清理目标端临时目录；fy hw agent --out ./hwprobe.sh 可单独导出脚本"),
+        );
+    }
+    let d = match need_dev(&Config::load(), Some(&pos[0])) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let max_dt_nodes = match flag_val(&args, "--max-dt-nodes") {
+        Some(v) => match v.parse::<u32>() {
+            Ok(n) => Some(n),
+            Err(_) => return fail(code::USAGE, "--max-dt-nodes 必须是非负整数"),
+        },
+        None => None,
+    };
+    let options = hwprobe::Options {
+        output_dir: flag_val(&args, "--out")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(format!("hwprobe-{}-{}", d.name, now_epoch()))),
+        bundle: !has_flag(&args, "--no-bundle"),
+        keep_remote: has_flag(&args, "--keep-remote"),
+        include_identifiers: has_flag(&args, "--include-identifiers"),
+        max_dt_nodes,
+    };
+    match hwprobe::collect(&d, &options) {
+        Ok(r) => {
+            if jsonout::json_mode() {
+                return jsonout::emit_ok(vec![
+                    ("device", transport_json(&d)),
+                    ("output_dir", J::s(r.output_dir.display().to_string())),
+                    ("report", J::s(r.report.display().to_string())),
+                    ("device_tree_archive", r.archive.map(|p| J::s(p.display().to_string())).unwrap_or(J::Null)),
+                    ("remote_dir", J::s(r.remote_dir)),
+                    ("identifiers_included", J::b(options.include_identifiers)),
+                ]);
+            }
+            ok(&format!("硬件清单已保存: {}", r.report.display()));
+            if let Some(archive) = r.archive {
+                ok(&format!("原始设备树已保存: {}", archive.display()));
+            }
+            0
+        }
+        Err(e) => fail(code::TRANSFER, &e),
+    }
+}
+
 fn cmd_blame(args: Vec<String>) -> i32 {
     let cfg = Config::load();
     let pos = positional(&args, &["-n"]);
@@ -1657,6 +1737,7 @@ fn emit_catalog() -> i32 {
         cmd("net", "fy net <设备> [-c N] [--no-speed]", "网络体检：延迟/抖动/丢包、MTU、路由、DNS、出网、上下行实测带宽", true),
         cmd("scan", "fy scan [--subnet CIDR] [--add] [--no-mdns]", "发现设备：mDNS + 网段扫描 + 指纹认领", true),
         cmd("info", "fy info <设备>", "身份卡片：内核/架构/MAC/machine-id", true),
+        cmd("hw", "fy hw <设备> [--out 目录] [--no-bundle] [--include-identifiers] [--max-dt-nodes N]", "一次性只读采集硬件清单：proc/sysfs/live DT，默认回收原始 DT archive", true),
         cmd("up", "fy up <设备> [--boot]", "通道爬升：串口登录→配网→ssh+免密", false),
         cmd("usb", "fy usb net|gadget|install", "USB 一键配网", false),
         cmd("sync", "fy sync <设备> <本地目录> <远端目录> [--exec 命令] [--once]", "保存即上板", false),
@@ -1738,6 +1819,7 @@ fn print_help() {
   fy scan [--subnet CIDR] [--add] [--no-mdns]   mDNS + 并发扫段 + 老朋友换IP自动认领
   fy sh [设备] [-- 命令]     进 shell / 跑一条命令（串口自动经黑匣子共享）
   fy info <设备>             身份卡片: 内核/架构/MAC/machine-id/实时状态
+  fy hw <设备> [--out 目录]  一次性硬件快照: proc/sysfs/设备树 + 原始 DT archive
 
 {s2}
   fy push <设备> <本地> [远端]      上传: 断点续传 + sha256 校验 + 进度条
