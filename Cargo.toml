@@ -1,0 +1,18 @@
+[package]
+name = "ferry"
+version = "0.1.0"
+edition = "2021"
+description = "ferry (fy) — 上位机↔下位机摆渡人: unified ssh/adb/serial workbench for embedded Linux development"
+license = "MIT"
+
+[[bin]]
+name = "fy"
+path = "src/main.rs"
+
+# 零依赖：只用 Rust 标准库。ssh/adb/stty 等通过系统命令编排。
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = "s"

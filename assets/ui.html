@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ferry · 上位机↔下位机工作台</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css">
+<style>
+  :root{
+    --bg:#0d1117; --side:#0f141b; --panel:#161b22; --panel2:#1c222b;
+    --bd:#242c37; --tx:#c9d1d9; --dim:#8b949e; --dim2:#6e7681;
+    --green:#3fb950; --cyan:#39c5cf; --yellow:#d29922; --red:#f85149;
+    --blue:#58a6ff; --mag:#bc8cff; --accent:#39c5cf;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--tx); font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex; overflow:hidden;
+  }
+  /* ---------- 侧栏 ---------- */
+  #side{
+    width:322px; min-width:322px; height:100vh; background:var(--side);
+    border-right:1px solid var(--bd); display:flex; flex-direction:column;
+  }
+  #brand{
+    padding:14px 16px 12px; border-bottom:1px solid var(--bd); display:flex; align-items:baseline; gap:8px;
+  }
+  #brand .logo{font-size:17px;font-weight:700;letter-spacing:.5px}
+  #brand .logo b{color:var(--cyan)}
+  #brand .ver{color:var(--dim2);font-size:11px}
+  #brand .sub{color:var(--dim);font-size:11px;margin-left:auto}
+  #side .scroll{overflow-y:auto; flex:1; padding:12px 12px 20px}
+  .sec{margin-bottom:16px}
+  .sec > h3{
+    margin:0 2px 8px; font-size:11px; font-weight:600; letter-spacing:.6px;
+    color:var(--dim); text-transform:uppercase; display:flex; align-items:center; gap:6px;
+  }
+  .sec > h3 .cnt{color:var(--dim2); font-weight:400}
+  .sec > h3 .rt{margin-left:auto; color:var(--dim2); font-size:10px}
+
+  .quick{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .qbtn{
+    background:var(--panel); border:1px solid var(--bd); color:var(--tx);
+    padding:8px 6px; border-radius:7px; cursor:pointer; font-size:12px; text-align:center;
+    transition:.12s; display:flex; align-items:center; justify-content:center; gap:5px;
+  }
+  .qbtn:hover{background:var(--panel2); border-color:#31404f; transform:translateY(-1px)}
+  .qbtn .i{font-size:13px}
+  .qbtn.wide{grid-column:span 2}
+
+  /* 设备卡 */
+  .dev{
+    background:var(--panel); border:1px solid var(--bd); border-radius:8px;
+    padding:9px 10px; margin-bottom:8px; transition:.12s;
+  }
+  .dev:hover{border-color:#31404f}
+  .dev .row1{display:flex; align-items:center; gap:7px}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 0 rgba(0,0,0,0)}
+  .dot.on{background:var(--green); box-shadow:0 0 6px 0 var(--green)}
+  .dot.off{background:#484f58}
+  .dev .name{font-weight:600; cursor:pointer}
+  .dev .name:hover{color:var(--cyan)}
+  .badge{font-size:10px; padding:1px 6px; border-radius:20px; border:1px solid var(--bd); color:var(--dim)}
+  .badge.ssh{color:var(--green);border-color:#1c3a24}
+  .badge.adb{color:var(--cyan);border-color:#12363a}
+  .badge.serial{color:var(--yellow);border-color:#3a3113}
+  .dev .why{margin-left:auto; font-size:11px; color:var(--dim)}
+  .dev .meta{color:var(--dim2); font-size:11px; margin:4px 0 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .dev .acts{display:flex; gap:4px; margin-top:7px; flex-wrap:wrap}
+  .abtn{
+    background:transparent; border:1px solid var(--bd); color:var(--dim);
+    padding:3px 8px; border-radius:6px; cursor:pointer; font-size:11px; transition:.12s;
+  }
+  .abtn:hover{color:var(--tx); border-color:#3b4653; background:var(--panel2)}
+  .abtn.up:hover{color:var(--mag);border-color:#3a2a4d}
+  .abtn.share:hover{color:var(--blue);border-color:#1e3a5f}
+  .abtn.bb:hover{color:var(--yellow);border-color:#3a3113}
+
+  .empty{color:var(--dim2); font-size:12px; padding:8px 4px; border:1px dashed var(--bd); border-radius:7px; text-align:center}
+
+  /* 转发/黑匣子/借网 小条 */
+  .strip{display:flex; align-items:center; gap:7px; background:var(--panel); border:1px solid var(--bd); border-radius:7px; padding:6px 9px; margin-bottom:6px; font-size:12px}
+  .strip .k{color:var(--dim2)}
+  .strip .x{margin-left:auto; color:var(--dim2); cursor:pointer; padding:0 3px}
+  .strip .x:hover{color:var(--red)}
+  .miniform{display:flex; gap:5px; margin-top:6px}
+  .miniform input{
+    flex:1; min-width:0; background:var(--bg); border:1px solid var(--bd); color:var(--tx);
+    border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit;
+  }
+  .miniform input:focus{outline:none;border-color:var(--accent)}
+  .miniform button{background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:6px;padding:5px 10px;cursor:pointer}
+  .miniform button:hover{border-color:var(--accent);color:var(--cyan)}
+
+  /* ---------- 主区 ---------- */
+  #main{flex:1; height:100vh; display:flex; flex-direction:column; min-width:0}
+  #bar{
+    height:38px; min-height:38px; background:var(--side); border-bottom:1px solid var(--bd);
+    display:flex; align-items:center; padding:0 12px; gap:10px; font-size:12px; color:var(--dim);
+  }
+  #bar .tt{color:var(--tx); font-weight:600}
+  #bar .wsdot{width:7px;height:7px;border-radius:50%;background:var(--dim2)}
+  #bar .wsdot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+  #bar .wsdot.off{background:var(--red)}
+  #bar .sp{margin-left:auto}
+  #bar button{background:transparent;border:1px solid var(--bd);color:var(--dim);border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px}
+  #bar button:hover{color:var(--tx);border-color:#3b4653}
+  #termwrap{flex:1; min-height:0; background:#0a0e13; padding:8px 10px}
+  #term{width:100%; height:100%}
+  .hint{color:var(--dim2)}
+  /* 滚动条 */
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2a323d;border-radius:6px}
+  ::-webkit-scrollbar-thumb:hover{background:#3a4552}
+  ::-webkit-scrollbar-track{background:transparent}
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--panel2); border:1px solid var(--bd); color:var(--tx);
+    padding:8px 16px; border-radius:8px; font-size:12px; opacity:0; transition:.25s; pointer-events:none; z-index:9;
+  }
+  .toast.show{opacity:1; bottom:26px}
+</style>
+</head>
+<body>
+  <aside id="side">
+    <div id="brand">
+      <span class="logo"><b>ferry</b> 工作台</span>
+      <span class="ver" id="ver"></span>
+      <span class="sub">上位机↔下位机</span>
+    </div>
+    <div class="scroll">
+      <div class="sec">
+        <h3>快捷动作</h3>
+        <div class="quick">
+          <div class="qbtn" onclick="run('fy scan')"><span class="i">🔍</span>扫描发现</div>
+          <div class="qbtn" onclick="run('fy')"><span class="i">📋</span>设备总览</div>
+          <div class="qbtn" onclick="run('fy top')"><span class="i">📊</span>多板仪表盘</div>
+          <div class="qbtn" onclick="run('fy doctor')"><span class="i">🩺</span>主机体检</div>
+          <div class="qbtn wide" onclick="run('fy usb net')"><span class="i">🔌</span>USB 一键配网</div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3>设备 <span class="cnt" id="devcnt"></span><span class="rt" id="devrt"></span></h3>
+        <div id="devs"><div class="empty">加载中…</div></div>
+      </div>
+
+      <div class="sec">
+        <h3>端口转发 <span class="cnt" id="fwdcnt"></span></h3>
+        <div id="fwds"></div>
+        <div class="miniform">
+          <input id="fwdDev" placeholder="设备" style="max-width:80px">
+          <input id="fwdSpec" placeholder="8080  或  R:9000:8000">
+          <button onclick="addFwd()">+</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3>串口黑匣子 <span class="cnt" id="bbcnt"></span></h3>
+        <div id="bbs"></div>
+      </div>
+
+      <div class="sec">
+        <h3>借网中 <span class="cnt" id="shcnt"></span></h3>
+        <div id="shs"></div>
+      </div>
+
+      <div class="sec">
+        <h3>命令面板</h3>
+        <div class="miniform">
+          <input id="cmd" placeholder="fy … 回车执行" onkeydown="if(event.key==='Enter')runCmd()">
+          <button onclick="runCmd()">▶</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="bar">
+      <span class="wsdot" id="wsdot"></span>
+      <span class="tt">系统终端</span>
+      <span class="hint" id="cwdhint">— 直接敲命令，或点左侧工具注入</span>
+      <span class="sp"></span>
+      <button onclick="clearTerm()">清屏</button>
+      <button onclick="reconnect()">重连</button>
+    </div>
+    <div id="termwrap"><div id="term"></div></div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm-addon-fit/0.8.0/xterm-addon-fit.min.js"></script>
+<script>
+// ---------------- 终端 ----------------
+const term = new Terminal({
+  fontFamily:'"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace',
+  fontSize:13, cursorBlink:true, scrollback:8000, allowProposedApi:true,
+  theme:{
+    background:'#0a0e13', foreground:'#c9d1d9', cursor:'#39c5cf',
+    black:'#484f58', red:'#f85149', green:'#3fb950', yellow:'#d29922',
+    blue:'#58a6ff', magenta:'#bc8cff', cyan:'#39c5cf', white:'#b1bac4',
+    brightBlack:'#6e7681', brightRed:'#ff7b72', brightGreen:'#56d364', brightYellow:'#e3b341',
+    brightBlue:'#79c0ff', brightMagenta:'#d2a8ff', brightCyan:'#56d4dd', brightWhite:'#f0f6fc'
+  }
+});
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open(document.getElementById('term'));
+setTimeout(()=>fit.fit(), 30);
+
+let ws=null, wsReady=false, enc=new TextEncoder();
+function wsUrl(){ return `ws://${location.host}/pty?rows=${term.rows}&cols=${term.cols}`; }
+function connect(){
+  ws = new WebSocket(wsUrl());
+  ws.binaryType='arraybuffer';
+  ws.onopen=()=>{ wsReady=true; setDot(true); sendResize(); };
+  ws.onclose=()=>{ wsReady=false; setDot(false); };
+  ws.onerror=()=>{ setDot(false); };
+  ws.onmessage=e=>{
+    if(typeof e.data==='string') term.write(e.data);
+    else term.write(new Uint8Array(e.data));
+  };
+}
+term.onData(d=>{ if(wsReady) ws.send(enc.encode(d)); });
+function sendResize(){ if(wsReady) ws.send(JSON.stringify({t:'resize',rows:term.rows,cols:term.cols})); }
+function setDot(on){ const d=document.getElementById('wsdot'); d.className='wsdot '+(on?'on':'off'); }
+window.addEventListener('resize',()=>{ fit.fit(); sendResize(); });
+new ResizeObserver(()=>{ try{fit.fit(); sendResize();}catch(e){} }).observe(document.getElementById('termwrap'));
+
+function reconnect(){ try{ws&&ws.close();}catch(e){} term.write('\r\n\x1b[2m[重新连接…]\x1b[0m\r\n'); setTimeout(connect,150); }
+function clearTerm(){ term.clear(); }
+connect();
+
+// ---------------- 侧栏动作：注入命令到终端 ----------------
+function run(cmd){
+  if(!wsReady){ toast('终端未连接，正在重连'); reconnect(); return; }
+  term.focus();
+  ws.send(enc.encode(cmd+'\r'));       // \r = 回车执行
+}
+function runCmd(){
+  const el=document.getElementById('cmd'); const v=el.value.trim();
+  if(!v) return; run(v); el.value='';
+}
+function addFwd(){
+  const d=document.getElementById('fwdDev').value.trim();
+  const s=document.getElementById('fwdSpec').value.trim();
+  if(!d||!s){ toast('填设备名和转发规则'); return; }
+  run(`fy fwd ${d} ${s}`);
+  document.getElementById('fwdSpec').value='';
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }
+
+// ---------------- 侧栏数据轮询 ----------------
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function poll(){
+  try{
+    const r=await fetch('/api/devices'); const j=await r.json();
+    renderDevices(j.devices||[]);
+    document.getElementById('devrt').textContent=new Date().toLocaleTimeString();
+  }catch(e){}
+  try{
+    const r=await fetch('/api/state'); const s=await r.json();
+    renderState(s);
+  }catch(e){}
+}
+function renderDevices(devs){
+  document.getElementById('devcnt').textContent=devs.length?`(${devs.length})`:'';
+  const box=document.getElementById('devs');
+  if(!devs.length){ box.innerHTML='<div class="empty">还没有设备 · 点上方「扫描发现」或在终端 <b>fy add</b></div>'; return; }
+  box.innerHTML=devs.map(d=>{
+    const meta=[d.kernel,d.arch].filter(Boolean).join(' · ')|| (d.mac||'');
+    const acts = d.transport==='serial'
+      ? `<button class="abtn up" onclick="run('fy up ${esc(d.name)}')">↑爬升</button>
+         <button class="abtn" onclick="run('fy sh ${esc(d.name)}')">终端</button>
+         <button class="abtn bb" onclick="run('fy bb start ${esc(d.name)}')">黑匣子</button>
+         <button class="abtn" onclick="run('fy info ${esc(d.name)}')">信息</button>`
+      : `<button class="abtn" onclick="run('fy sh ${esc(d.name)}')">终端</button>
+         <button class="abtn" onclick="run('fy log ${esc(d.name)}')">日志</button>
+         <button class="abtn share" onclick="run('fy share ${esc(d.name)}')">借网</button>
+         <button class="abtn up" onclick="run('fy up ${esc(d.name)}')">爬升</button>
+         <button class="abtn" onclick="run('fy info ${esc(d.name)}')">信息</button>`;
+    return `<div class="dev">
+      <div class="row1">
+        <span class="dot ${d.online?'on':'off'}"></span>
+        <span class="name" onclick="run('fy sh ${esc(d.name)}')" title="点击进入终端">${esc(d.name)}</span>
+        <span class="badge ${esc(d.transport)}">${esc(d.transport)}</span>
+        <span class="why">${esc(d.why)}</span>
+      </div>
+      <div class="meta">${esc(d.endpoint)}${meta?'  ·  '+esc(meta):''}</div>
+      <div class="acts">${acts}</div>
+    </div>`;
+  }).join('');
+}
+function renderState(s){
+  // 转发
+  const f=s.forwards||[];
+  document.getElementById('fwdcnt').textContent=f.length?`(${f.length})`:'';
+  document.getElementById('fwds').innerHTML = f.length ? f.map(x=>
+    `<div class="strip"><span class="k">[${esc(x.id)}]</span> ${esc(x.spec)} <span class="k">· ${esc(x.dev)}</span>
+     <span class="x" title="移除" onclick="run('fy fwd rm ${esc(x.id)}')">✕</span></div>`).join('') : '';
+  // 黑匣子
+  const b=s.blackboxes||[];
+  document.getElementById('bbcnt').textContent=b.length?`(${b.length})`:'';
+  document.getElementById('bbs').innerHTML = b.length ? b.map(x=>
+    `<div class="strip"><span class="dot ${x.alive?'on':'off'}"></span>${esc(x.dev)}
+     <span class="k">${x.incidents}起事故</span>
+     <span class="x" title="看现场" onclick="run('fy blame ${esc(x.dev)}')" style="color:var(--yellow)">看</span>
+     <span class="x" title="停止" onclick="run('fy bb stop ${esc(x.dev)}')">✕</span></div>`).join('') : '<div class="empty">无 · 串口设备可 <b>fy bb start</b></div>';
+  // 借网
+  const sh=s.shares||[];
+  document.getElementById('shcnt').textContent=sh.length?`(${sh.length})`:'';
+  document.getElementById('shs').innerHTML = sh.length ? sh.map(x=>
+    `<div class="strip"><span class="dot on"></span>${esc(x.dev)} <span class="k">${esc(x.mode)}</span>
+     <span class="x" title="关闭" onclick="run('fy share ${esc(x.dev)} --off')">✕</span></div>`).join('') : '';
+}
+poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>
