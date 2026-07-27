@@ -9,6 +9,13 @@ license = "MIT"
 name = "fy"
 path = "src/main.rs"
 
+[lib]
+path = "src/lib.rs"
+
+[workspace]
+members = ["desktop/src-tauri"]
+resolver = "2"
+
 # 零依赖：只用 Rust 标准库。ssh/adb/stty 等通过系统命令编排。
 
 [profile.release]

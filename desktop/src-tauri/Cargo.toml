@@ -1,0 +1,14 @@
+[package]
+name = "ferry-desktop"
+version = "0.1.0"
+description = "Desktop workbench for ferry devices"
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2.5.0", features = [] }
+
+[dependencies]
+ferry = { path = "../.." }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2.10.0", features = [] }
