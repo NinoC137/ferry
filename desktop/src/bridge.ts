@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BlackboxView, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
+import type { BlackboxView, DeviceCandidate, DeviceForm, DeviceSummary, ForwardView, OperationResult, ProbeResult, TerminalStarted, TopRow, TransferRequest, WorkflowPlan, WorkflowRequest } from "./types";
 
 const isDesktop = "__TAURI_INTERNALS__" in window;
 
@@ -61,6 +61,10 @@ export async function checkConnection(name: string): Promise<ProbeResult> {
   if (isDesktop) return invoke<ProbeResult>("check_connection", { name });
   const device = demoDevices.find((item) => item.name === name) ?? demoDevices[0];
   return { online: device.online, detail: device.status };
+}
+
+export async function discoverLocalDevices(): Promise<DeviceCandidate[]> {
+  return isDesktop ? invoke<DeviceCandidate[]>("discover_local_devices") : [];
 }
 
 export async function startTerminal(name: string, cols: number, rows: number, command?: string): Promise<TerminalStarted> {

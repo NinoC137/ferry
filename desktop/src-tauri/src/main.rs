@@ -89,6 +89,10 @@ struct WorkflowPlan { kind: String, device: String, preflight_ok: bool, prefligh
 #[serde(rename_all = "camelCase")]
 struct WorkflowRequest { kind: String, device: String, nat: bool, persist: bool, boot_ok: bool, mode: String, confirmed: bool }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceCandidate { transport: String, value: String, detail: String }
+
 fn probe_device(d: &Device) -> ProbeResult {
     match d.transport {
         Transport::Ssh => {
@@ -230,6 +234,18 @@ fn check_connection(name: String) -> Result<ProbeResult, String> {
         .find(&name)
         .ok_or_else(|| format!("Unknown device '{name}'."))?;
     Ok(probe_device(&d))
+}
+
+#[tauri::command]
+fn discover_local_devices() -> Vec<DeviceCandidate> {
+    let mut candidates = Vec::new();
+    for (serial, detail) in ferry::adbx::list_devices() {
+        candidates.push(DeviceCandidate { transport: "adb".into(), value: serial, detail });
+    }
+    for port in ferry::serialx::serial_ports() {
+        candidates.push(DeviceCandidate { transport: "serial".into(), value: port, detail: "Local serial port".into() });
+    }
+    candidates
 }
 
 #[tauri::command]
@@ -636,6 +652,7 @@ fn main() {
             get_device,
             save_device,
             check_connection,
+            discover_local_devices,
             transfer,
             list_forwards,
             add_forward,

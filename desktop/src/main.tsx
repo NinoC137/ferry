@@ -22,10 +22,10 @@ import {
   Usb,
   X,
 } from "lucide-react";
-import { checkConnection, getDevice, listDevices, saveDevice } from "./bridge";
+import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
 import { TerminalPane } from "./TerminalPane";
-import type { DeviceForm, DeviceSummary } from "./types";
+import type { DeviceCandidate, DeviceForm, DeviceSummary } from "./types";
 import { newDevice } from "./types";
 import "./styles.css";
 
@@ -53,6 +53,8 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
   const [view, setView] = useState<"terminal" | "operations">("terminal");
+  const [creating, setCreating] = useState(false);
+  const [candidates, setCandidates] = useState<DeviceCandidate[]>([]);
 
   const addActivity = useCallback((message: string) => {
     setActivity((entries) => [`${new Date().toLocaleTimeString()}  ${message}`, ...entries].slice(0, 30));
@@ -63,24 +65,24 @@ function App() {
     try {
       const result = await listDevices();
       setDevices(result);
-      if (!selected && result[0]) setSelected(result[0].name);
+      if (!creating) setSelected((current) => current || result[0]?.name || "");
     } catch (error) {
       addActivity(`Unable to load devices: ${String(error)}`);
     } finally {
       setBusy(false);
     }
-  }, [addActivity, selected]);
+  }, [addActivity, creating]);
 
   useEffect(() => {
     void refreshDevices();
   }, [refreshDevices]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || creating) return;
     void getDevice(selected)
       .then((device) => setForm(device))
       .catch((error) => addActivity(`Unable to load ${selected}: ${String(error)}`));
-  }, [addActivity, selected]);
+  }, [addActivity, creating, selected]);
 
   const selectedDevice = useMemo(() => devices.find((device) => device.name === selected), [devices, selected]);
 
@@ -89,14 +91,43 @@ function App() {
   };
 
   const selectDevice = (name: string) => {
+    setCreating(false);
     setSelected(name);
     setConnectionMessage("");
+  };
+
+  const beginNewDevice = () => {
+    setCreating(true);
+    setSelected("");
+    setForm(newDevice());
+    setCandidates([]);
+    setConnectionMessage("Draft profile: choose a transport and save it.");
+  };
+
+  const discover = async () => {
+    try {
+      const found = await discoverLocalDevices();
+      setCandidates(found);
+      setConnectionMessage(found.length ? `${found.length} local ADB/serial candidate(s) found.` : "No local ADB or serial candidates found.");
+    } catch (error) {
+      setConnectionMessage(`Discovery failed: ${String(error)}`);
+    }
+  };
+
+  const useCandidate = (candidate: DeviceCandidate) => {
+    const draft = newDevice();
+    draft.transport = candidate.transport;
+    if (candidate.transport === "adb") draft.adbSerial = candidate.value;
+    if (candidate.transport === "serial") draft.dev = candidate.value;
+    setForm(draft);
+    setCreating(true);
   };
 
   const save = async () => {
     try {
       const saved = await saveDevice(form);
       setForm(saved);
+      setCreating(false);
       setSelected(saved.name);
       addActivity(`${saved.name}: profile saved`);
       await refreshDevices();
@@ -162,8 +193,9 @@ function App() {
         </header>
 
         <section className="sidebar-section devices-section">
-          <div className="section-label"><span>DEVICES</span><button className="icon-button small" title="Add device" onClick={() => { setForm(newDevice()); setSelected(""); }}><Plus size={16} /></button></div>
+          <div className="section-label"><span>DEVICES</span><button className="icon-button small" title="Add device profile" onClick={beginNewDevice}><Plus size={16} /></button></div>
           <div className="device-list">
+            {creating && <button className="device-row selected draft-device" onClick={beginNewDevice}><span className="status-dot" /><Plus size={16} /><span className="device-copy"><strong>New device</strong><small>Unsaved profile</small></span></button>}
             {devices.map((device) => {
               const Icon = iconForTransport(device.transport);
               return <button className={`device-row ${selected === device.name ? "selected" : ""}`} key={device.name} onClick={() => selectDevice(device.name)}>
@@ -188,8 +220,9 @@ function App() {
         </section>
 
         <section className="sidebar-section profile-section">
-          <div className="section-label"><span>{selected ? "DEVICE SETTINGS" : "NEW DEVICE"}</span><Settings2 size={15} /></div>
+          <div className="section-label"><span>{creating ? "NEW DEVICE" : "DEVICE SETTINGS"}</span><Settings2 size={15} /></div>
           <div className="form-scroll">
+            {creating && <><button className="discover-button" onClick={() => void discover()}><RefreshCcw size={14} />Discover local ADB / serial</button>{candidates.map((candidate) => <button className="candidate-row" key={`${candidate.transport}-${candidate.value}`} onClick={() => useCandidate(candidate)}><span>{candidate.transport.toUpperCase()}</span><strong>{candidate.value}</strong><small>{candidate.detail}</small></button>)}</>}
             <label>Name<input value={form.name} onChange={(event) => setField("name", event.target.value)} placeholder="rk3588-lab" /></label>
             <label>Transport<select value={form.transport} onChange={(event) => setField("transport", event.target.value as DeviceForm["transport"])}><option value="ssh">SSH</option><option value="adb">ADB</option><option value="serial">Serial</option></select></label>
             {form.transport === "ssh" && <>
@@ -231,7 +264,7 @@ function App() {
               {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id && view === "terminal"} onStarted={started} onActivity={addActivity} /></div>)}
               {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
             </div>
-            <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} onActivity={addActivity} onOpenTask={openTask} /></div>
+            <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} active={view === "operations"} onActivity={addActivity} onOpenTask={openTask} /></div>
           </div>
           <aside className="activity-panel">
             <div className="activity-title"><Activity size={16} />Activity</div>

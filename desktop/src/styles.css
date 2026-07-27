@@ -31,6 +31,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .device-row { display: grid; grid-template-columns: 8px 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 7px 8px; text-align: left; color: #a8b8be; background: transparent; border: 1px solid transparent; border-radius: 6px; }
 .device-row:hover { background: #202e34; }
 .device-row.selected { color: #edf6f5; background: #21353a; border-color: #2a5b5a; }
+.device-row.draft-device { border-style: dashed; color:#9ae4d0; }
 .device-copy { min-width: 0; display: grid; gap: 3px; }
 .device-copy strong { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .device-copy small { overflow: hidden; color: #83949c; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -58,6 +59,10 @@ input:focus, select:focus, textarea:focus { border-color: #54a99c; box-shadow: 0
 .save-button, .command-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 5px; font-weight: 650; }
 .save-button { min-height: 34px; margin-top: 2px; color: #09211f; background: #8ee5cc; border: 1px solid #aaf0dc; font-size: 12px; }
 .save-button:hover { background: #b2f1dd; }
+.discover-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:30px; color:#b8d8d5; background:#1d383b; border:1px solid #386968; border-radius:4px; font-size:10px; }
+.discover-button:hover { color:#e6f7f4; background:#285153; }
+.candidate-row { display:grid; grid-template-columns:auto minmax(0,1fr); gap:3px 7px; padding:7px; text-align:left; color:#aebfc4; background:#17262c; border:1px solid #31474e; border-radius:4px; }
+.candidate-row:hover { background:#20363d; border-color:#4a7a78; }.candidate-row span { color:#7ee0c2; font-size:9px; font-weight:700; }.candidate-row strong { overflow:hidden; color:#d8e8e8; font-family:SFMono-Regular, Menlo, monospace; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.candidate-row small { grid-column:1 / -1; color:#7f939a; font-size:9px; }
 
 .workspace { display: grid; grid-template-rows: 66px 38px minmax(0, 1fr) 28px; min-width: 0; background: #11181d; }
 .workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 21px; border-bottom: 1px solid #26323a; background: #151f24; }

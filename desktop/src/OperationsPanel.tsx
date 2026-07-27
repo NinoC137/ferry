@@ -3,17 +3,17 @@ import { AlertTriangle, Box, Bug, Cable, ChevronRight, FileDown, FileUp, Gauge, 
 import { addForward, blackboxBlame, blackboxes, listForwards, removeForward, setBlackbox, topSnapshot, transfer, workflowExecute, workflowPreview } from "./bridge";
 import type { BlackboxView, ForwardView, TopRow, WorkflowPlan } from "./types";
 
-interface Props { device: string; onActivity: (message: string) => void; onOpenTask: (title: string, command: string) => void; }
+interface Props { device: string; active: boolean; onActivity: (message: string) => void; onOpenTask: (title: string, command: string) => void; }
 const logCommand = "if command -v journalctl >/dev/null 2>&1; then journalctl -f -n 100; elif [ -f /var/log/messages ]; then tail -n 100 -F /var/log/messages; else dmesg -w; fi";
 
-export function OperationsPanel({ device, onActivity, onOpenTask }: Props) {
+export function OperationsPanel({ device, active, onActivity, onOpenTask }: Props) {
   const [local, setLocal] = useState(""); const [remote, setRemote] = useState("/tmp/"); const [direction, setDirection] = useState<"push" | "pull">("push");
   const [taskCommand, setTaskCommand] = useState("./app");
   const [forwards, setForwards] = useState<ForwardView[]>([]); const [spec, setSpec] = useState("8080:80"); const [top, setTop] = useState<TopRow[]>([]);
   const [boxes, setBoxes] = useState<BlackboxView[]>([]); const [blame, setBlame] = useState(""); const [workflow, setWorkflow] = useState<WorkflowPlan>();
   const [kind, setKind] = useState("share"); const [nat, setNat] = useState(false); const [persist, setPersist] = useState(false); const [bootOk, setBootOk] = useState(false); const [mode, setMode] = useState("ncm"); const [busy, setBusy] = useState(false);
   const refresh = async () => { const [f, t, b] = await Promise.all([listForwards(), topSnapshot(), blackboxes()]); setForwards(f); setTop(t); setBoxes(b); };
-  useEffect(() => { void refresh().catch((error) => onActivity(`Operations refresh failed: ${String(error)}`)); }, [device]);
+  useEffect(() => { if (active && device) void refresh().catch((error) => onActivity(`Operations refresh failed: ${String(error)}`)); }, [active, device]);
   const run = async (label: string, operation: () => Promise<{ detail: string }>) => { setBusy(true); try { const result = await operation(); onActivity(`${label}: ${result.detail}`); await refresh(); } catch (error) { onActivity(`${label} failed: ${String(error)}`); } finally { setBusy(false); } };
   const preview = async () => { try { setWorkflow(await workflowPreview(kind, device, nat, persist, bootOk, mode)); } catch (error) { onActivity(`Workflow preflight failed: ${String(error)}`); } };
   const execute = () => run(`${kind} workflow`, () => workflowExecute({ kind, device, nat, persist, bootOk, mode, confirmed: true }));

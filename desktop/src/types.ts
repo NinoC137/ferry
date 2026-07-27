@@ -45,6 +45,7 @@ export interface TopRow { name: string; online: boolean; cpu: string; memory: st
 export interface BlackboxView { name: string; running: boolean; incidents: number; logPath: string; }
 export interface WorkflowPlan { kind: string; device: string; preflightOk: boolean; preflight: string; steps: string[]; rollback: string; }
 export interface WorkflowRequest { kind: string; device: string; nat: boolean; persist: boolean; bootOk: boolean; mode: string; confirmed: boolean; }
+export interface DeviceCandidate { transport: Transport; value: string; detail: string; }
 
 export const newDevice = (): DeviceForm => ({
   name: "new-board",
