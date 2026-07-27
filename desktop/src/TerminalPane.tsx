@@ -17,6 +17,8 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
+  const visible = useRef(active);
+  const syncSize = useRef<() => void>(() => {});
 
   useEffect(() => {
     const term = new Terminal({
@@ -62,9 +64,15 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     const pendingInput: Uint8Array[] = [];
 
     const sendResize = () => {
-      if (socket?.readyState !== WebSocket.OPEN) return;
+      if (!visible.current || socket?.readyState !== WebSocket.OPEN) return;
       socket.send(JSON.stringify({ t: "resize", rows: term.rows, cols: term.cols }));
     };
+    const fitVisibleTerminal = () => {
+      if (!visible.current) return;
+      fitAddon.fit();
+      sendResize();
+    };
+    syncSize.current = fitVisibleTerminal;
 
     const start = async () => {
       try {
@@ -122,8 +130,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
 
     if (host.current) {
       resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit();
-        sendResize();
+        fitVisibleTerminal();
       });
       resizeObserver.observe(host.current);
     }
@@ -133,6 +140,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       dataDisposable.dispose();
       resizeObserver?.disconnect();
       socket?.close();
+      syncSize.current = () => {};
       term.dispose();
       terminal.current = null;
       fit.current = null;
@@ -140,9 +148,10 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
   }, [command, deviceName, onActivity, onStarted, tabId]);
 
   useEffect(() => {
+    visible.current = active;
     if (!active || !terminal.current || !fit.current) return;
     requestAnimationFrame(() => {
-      fit.current?.fit();
+      syncSize.current();
       terminal.current?.focus();
     });
   }, [active]);

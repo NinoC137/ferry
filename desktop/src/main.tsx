@@ -227,10 +227,11 @@ function App() {
 
         <div className="workspace-body">
           <div className="terminal-stage">
-            {view === "operations" ? <OperationsPanel device={selected} onActivity={addActivity} onOpenTask={openTask} /> : <>
-              {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id} onStarted={started} onActivity={addActivity} /></div>)}
+            <div className={`workspace-layer ${view === "terminal" ? "active" : ""}`}>
+              {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id && view === "terminal"} onStarted={started} onActivity={addActivity} /></div>)}
               {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
-            </>}
+            </div>
+            <div className={`workspace-layer ${view === "operations" ? "active" : ""}`}><OperationsPanel device={selected} onActivity={addActivity} onOpenTask={openTask} /></div>
           </div>
           <aside className="activity-panel">
             <div className="activity-title"><Activity size={16} />Activity</div>
