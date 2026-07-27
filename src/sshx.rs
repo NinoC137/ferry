@@ -272,6 +272,23 @@ pub fn keyup(d: &Device) -> std::io::Result<()> {
     keyup_with_password(d, d.password.as_deref())
 }
 
+/// The private key that `keyup_with_password` will use or create.
+///
+/// The configured path wins. Otherwise mirror the public-key candidate order
+/// used by keyup so the desktop can persist and display the actual identity.
+pub fn identity_file(d: &Device) -> Option<String> {
+    if let Some(path) = d.key.as_ref().filter(|path| !path.trim().is_empty()) {
+        return Some(path.clone());
+    }
+    let home = crate::util::home().join(".ssh");
+    for name in ["id_ed25519", "id_rsa", "id_ecdsa"] {
+        if home.join(format!("{name}.pub")).exists() && home.join(name).exists() {
+            return Some(home.join(name).display().to_string());
+        }
+    }
+    None
+}
+
 /// Install a public key using an explicitly supplied, non-persistent password.
 /// GUI callers use this path because their executable is not the `fy` askpass
 /// callback binary used by the CLI.

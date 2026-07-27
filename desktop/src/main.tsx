@@ -167,6 +167,8 @@ function App() {
     try {
       const result = await setupSshKey(selected, keyPassword);
       setKeyPassword("");
+      const updated = await getDevice(selected);
+      setForm(updated);
       setConnectionMessage(result.detail);
       addActivity(`${selected}: passwordless SSH verified`);
       await refreshDevices();
@@ -257,7 +259,7 @@ function App() {
               <div className="split-fields"><label>Host<input value={form.host} onChange={(event) => setField("host", event.target.value)} /></label><label>Port<input type="number" value={form.port} onChange={(event) => setField("port", Number(event.target.value))} /></label></div>
               <label>User<input value={form.user} onChange={(event) => setField("user", event.target.value)} /></label>
               <label>Identity file<input value={form.key} onChange={(event) => setField("key", event.target.value)} placeholder="~/.ssh/id_ed25519" /></label>
-              {!creating && <div className="key-setup"><label>Current password (one-time)<input type="password" value={keyPassword} onChange={(event) => setKeyPassword(event.target.value)} placeholder="Only used to install the key" autoComplete="current-password" /></label><button className="key-setup-button" disabled={keyBusy} onClick={() => setKeyConfirmOpen(true)}><KeyRound size={15} />{keyBusy ? "Installing key..." : "Install and verify public key"}</button><p>Never saved by the desktop app. Leave blank only when SSH already accepts a key.</p></div>}
+              {!creating && !form.key.trim() && <div className="key-setup"><label>Current password (one-time)<input type="password" value={keyPassword} onChange={(event) => setKeyPassword(event.target.value)} placeholder="Only used to install the key" autoComplete="current-password" /></label><button className="key-setup-button" disabled={keyBusy} onClick={() => setKeyConfirmOpen(true)}><KeyRound size={15} />{keyBusy ? "Installing key..." : "Install and verify public key"}</button><p>Never saved by the desktop app. Leave blank only when SSH already accepts a key.</p></div>}
               <label className="toggle-row"><input type="checkbox" checked={form.legacy} onChange={(event) => setField("legacy", event.target.checked)} /><span>Legacy SSH algorithms</span><span title="Only use for isolated legacy boards"><CircleAlert size={14} /></span></label>
             </>}
             {form.transport === "adb" && <label>ADB serial<input value={form.adbSerial} onChange={(event) => setField("adbSerial", event.target.value)} placeholder="USB serial or IP:port" /></label>}

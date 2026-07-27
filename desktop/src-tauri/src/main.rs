@@ -297,7 +297,14 @@ fn setup_ssh_key(request: SetupSshKeyRequest) -> Result<OperationResult, String>
     let password = (!request.password.is_empty()).then_some(request.password.as_str()).or(device.password.as_deref());
     ferry::sshx::keyup_with_password(&device, password).map_err(|error| error.to_string())?;
     ferry::sshx::verify_key_auth(&device).map_err(|error| error.to_string())?;
-    Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}.", device.name) })
+    let identity = ferry::sshx::identity_file(&device)
+        .ok_or("Public-key setup succeeded but Ferry could not determine the local private-key path.")?;
+    let mut cfg = Config::load();
+    let profile = cfg.devices.get_mut(&device.name)
+        .ok_or_else(|| format!("Device '{}' disappeared while saving its identity file.", device.name))?;
+    profile.key = Some(identity.clone());
+    cfg.save().map_err(|error| error.to_string())?;
+    Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}. Identity file: {}", device.name, identity) })
 }
 
 fn plugin_view(plugin: &ferry::plugins::Plugin) -> PluginView {
