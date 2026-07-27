@@ -105,6 +105,10 @@ struct ScanRequest { subnet: String, use_mdns: bool }
 #[serde(rename_all = "camelCase")]
 struct ScanHit { ip: String, open: Vec<u16>, banner: String, mac: String, known_as: String, hostname: String, via: String, legacy: bool }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetupSshKeyRequest { name: String, password: String }
+
 fn probe_device(d: &Device) -> ProbeResult {
     match d.transport {
         Transport::Ssh => {
@@ -249,6 +253,20 @@ fn check_connection(name: String) -> Result<ProbeResult, String> {
         .find(&name)
         .ok_or_else(|| format!("Unknown device '{name}'."))?;
     Ok(probe_device(&d))
+}
+
+#[tauri::command]
+fn setup_ssh_key(request: SetupSshKeyRequest) -> Result<OperationResult, String> {
+    let device = Config::load()
+        .find(&request.name)
+        .ok_or_else(|| format!("Unknown device '{}'.", request.name))?;
+    if device.transport != Transport::Ssh {
+        return Err("Public-key setup is available only for SSH profiles.".into());
+    }
+    let password = (!request.password.is_empty()).then_some(request.password.as_str()).or(device.password.as_deref());
+    ferry::sshx::keyup_with_password(&device, password).map_err(|error| error.to_string())?;
+    ferry::sshx::verify_key_auth(&device).map_err(|error| error.to_string())?;
+    Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}.", device.name) })
 }
 
 #[tauri::command]
@@ -678,6 +696,7 @@ fn main() {
             get_device,
             save_device,
             check_connection,
+            setup_ssh_key,
             discover_local_devices,
             scan_network,
             transfer,

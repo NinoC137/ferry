@@ -71,6 +71,8 @@ export async function checkConnection(name: string): Promise<ProbeResult> {
   return { online: device.online, detail: device.status };
 }
 
+export const setupSshKey = (name: string, password: string) => invoke<OperationResult>("setup_ssh_key", { request: { name, password } });
+
 export async function discoverLocalDevices(): Promise<DeviceCandidate[]> {
   return isDesktop ? invoke<DeviceCandidate[]>("discover_local_devices") : [];
 }

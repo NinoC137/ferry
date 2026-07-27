@@ -5,6 +5,9 @@ use crate::config::Device;
 use crate::util::*;
 use std::io::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static KEYUP_ASKPASS_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 公共 ssh 选项。lab 板子重刷是常态：独立 known_hosts + accept-new，
 /// 变了指纹用 `fy forget` 一键清除。
@@ -266,6 +269,13 @@ pub fn pull(d: &Device, remote: &str, local: &Path) -> std::io::Result<bool> {
 
 /// 免密：把本机公钥装到板子 authorized_keys（自动生成密钥、兼容 dropbear 路径）。
 pub fn keyup(d: &Device) -> std::io::Result<()> {
+    keyup_with_password(d, d.password.as_deref())
+}
+
+/// Install a public key using an explicitly supplied, non-persistent password.
+/// GUI callers use this path because their executable is not the `fy` askpass
+/// callback binary used by the CLI.
+pub fn keyup_with_password(d: &Device, password: Option<&str>) -> std::io::Result<()> {
     let home = crate::util::home();
     let candidates = ["id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub"];
     let mut pubkey = String::new();
@@ -307,7 +317,11 @@ pub fn keyup(d: &Device) -> std::io::Result<()> {
          chmod 600 /etc/dropbear/authorized_keys; fi; echo FERRY_KEY_OK",
         pubkey.replace('\'', "'\\''")
     );
-    let out = exec_capture(d, &cmd)?;
+    let out = if let Some(password) = password.filter(|password| !password.is_empty()) {
+        exec_capture_with_password(d, &cmd, password)?
+    } else {
+        exec_capture(d, &cmd)?
+    };
     if dry() {
         return Ok(());
     }
@@ -320,6 +334,48 @@ pub fn keyup(d: &Device) -> std::io::Result<()> {
             format!("装公钥失败: {}", out.stderr.trim()),
         ))
     }
+}
+
+/// Confirm that authentication succeeds without a password prompt.
+pub fn verify_key_auth(d: &Device) -> std::io::Result<()> {
+    let extra = argv(&[
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "PasswordAuthentication=no",
+        "-o",
+        "KbdInteractiveAuthentication=no",
+    ]);
+    let out = run_capture(&ssh_argv(d, &extra, Some("true")), &[])?;
+    if out.status == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("public-key verification failed: {}", out.stderr.trim()),
+        ))
+    }
+}
+
+fn exec_capture_with_password(d: &Device, command: &str, password: &str) -> std::io::Result<Output> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = std::env::temp_dir().join(format!(
+        "ferry-keyup-askpass-{}-{}",
+        std::process::id(),
+        KEYUP_ASKPASS_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$FERRY_KEYUP_PASSWORD\"\n")?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))?;
+    let env = vec![
+        ("SSH_ASKPASS".into(), script.display().to_string()),
+        ("SSH_ASKPASS_REQUIRE".into(), "force".into()),
+        ("DISPLAY".into(), ":0".into()),
+        ("FERRY_KEYUP_PASSWORD".into(), password.into()),
+    ];
+    let result = run_capture(&ssh_argv(d, &[], Some(command)), &env);
+    let _ = std::fs::remove_file(script);
+    result
 }
 
 /// 板子重刷后清除 host key 记录。

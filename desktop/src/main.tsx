@@ -12,6 +12,7 @@ import {
   Gauge,
   LoaderCircle,
   LayoutDashboard,
+  KeyRound,
   MonitorCog,
   Network,
   Plus,
@@ -24,7 +25,7 @@ import {
   Usb,
   X,
 } from "lucide-react";
-import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice } from "./bridge";
+import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice, setupSshKey } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { ScanPanel } from "./ScanPanel";
@@ -59,6 +60,9 @@ function App() {
   const [view, setView] = useState<"terminal" | "operations" | "overview" | "scan">("overview");
   const [creating, setCreating] = useState(false);
   const [candidates, setCandidates] = useState<DeviceCandidate[]>([]);
+  const [keyPassword, setKeyPassword] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyConfirmOpen, setKeyConfirmOpen] = useState(false);
 
   const addActivity = useCallback((message: string) => {
     setActivity((entries) => [`${new Date().toLocaleTimeString()}  ${message}`, ...entries].slice(0, 30));
@@ -154,6 +158,24 @@ function App() {
     }
   };
 
+  const installPublicKey = async () => {
+    if (!selected || form.transport !== "ssh") return;
+    setKeyConfirmOpen(false);
+    setKeyBusy(true);
+    try {
+      const result = await setupSshKey(selected, keyPassword);
+      setKeyPassword("");
+      setConnectionMessage(result.detail);
+      addActivity(`${selected}: passwordless SSH verified`);
+      await refreshDevices();
+    } catch (error) {
+      setConnectionMessage(`Public-key setup failed: ${String(error)}`);
+      addActivity(`${selected}: public-key setup failed`);
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
   const openTerminal = () => {
     if (!selected) return;
     const id = `pending-${Date.now()}`;
@@ -233,6 +255,7 @@ function App() {
               <div className="split-fields"><label>Host<input value={form.host} onChange={(event) => setField("host", event.target.value)} /></label><label>Port<input type="number" value={form.port} onChange={(event) => setField("port", Number(event.target.value))} /></label></div>
               <label>User<input value={form.user} onChange={(event) => setField("user", event.target.value)} /></label>
               <label>Identity file<input value={form.key} onChange={(event) => setField("key", event.target.value)} placeholder="~/.ssh/id_ed25519" /></label>
+              {!creating && <div className="key-setup"><label>Current password (one-time)<input type="password" value={keyPassword} onChange={(event) => setKeyPassword(event.target.value)} placeholder="Only used to install the key" autoComplete="current-password" /></label><button className="key-setup-button" disabled={keyBusy} onClick={() => setKeyConfirmOpen(true)}><KeyRound size={15} />{keyBusy ? "Installing key..." : "Install and verify public key"}</button><p>Never saved by the desktop app. Leave blank only when SSH already accepts a key.</p></div>}
               <label className="toggle-row"><input type="checkbox" checked={form.legacy} onChange={(event) => setField("legacy", event.target.checked)} /><span>Legacy SSH algorithms</span><span title="Only use for isolated legacy boards"><CircleAlert size={14} /></span></label>
             </>}
             {form.transport === "adb" && <label>ADB serial<input value={form.adbSerial} onChange={(event) => setField("adbSerial", event.target.value)} placeholder="USB serial or IP:port" /></label>}
@@ -283,6 +306,7 @@ function App() {
         </div>
         <footer className="statusbar"><span><span className="status-dot online" /> Desktop ready</span><span>{selectedDevice?.transport?.toUpperCase() ?? "NO DEVICE"}</span><span>{tabs.length} terminal {tabs.length === 1 ? "session" : "sessions"}</span></footer>
       </section>
+      {keyConfirmOpen && <div className="modal-backdrop" role="presentation"><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="key-confirm-title"><KeyRound size={20} /><h2 id="key-confirm-title">Install SSH public key?</h2><p>Ferry will add this computer's public key to <code>{selected}</code>, including the Dropbear key path when present, then verify login with password authentication disabled.</p><p>The one-time password is not saved.</p><div className="modal-actions"><button onClick={() => setKeyConfirmOpen(false)}>Cancel</button><button className="confirm-button" onClick={() => void installPublicKey()}>Install and verify</button></div></section></div>}
     </main>
   );
 }
