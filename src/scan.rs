@@ -1,5 +1,5 @@
 //! `fy scan`：一条命令找齐周围的下位机。
-//! - 本机各网段 TCP 并发探测 (22/23/5555/80)
+//! - 本机各网段 TCP 并发探测 SSH/ADB 候选端口，并只保留可登录通道
 //! - 读 ssh banner（dropbear? OpenSSH? 顺手判断要不要 legacy 兼容）
 //! - ARP 表拿 MAC → 与指纹库比对，"老朋友换了 IP"自动认领
 //! - adb devices / 串口设备一并列出
@@ -14,7 +14,7 @@ use std::net::{SocketAddr, TcpStream};
 
 use std::time::Duration;
 
-const PROBE_PORTS: &[u16] = &[22, 23, 80, 5555, 8022];
+const PROBE_PORTS: &[u16] = &[22, 5555, 8022];
 
 #[derive(Debug, Clone, Default)]
 pub struct Hit {
@@ -27,6 +27,41 @@ pub struct Hit {
     pub hostname: String,
     /// 怎么发现的：tcp / mdns / tcp+mdns
     pub via: String,
+    /// Ferry 已验证的交互通道；没有就不作为扫描结果返回。
+    pub transport: Option<Transport>,
+    /// SSH 或网络 ADB 的实际连接端口。
+    pub login_port: u16,
+}
+
+fn ssh_port(hit: &Hit) -> Option<u16> {
+    [22, 8022]
+        .into_iter()
+        .find(|port| hit.open.contains(port))
+}
+
+fn is_ssh_banner(banner: &str) -> bool {
+    banner.starts_with("SSH-")
+}
+
+fn adb_network_endpoint(serial: &str, detail: &str) -> Option<(String, u16)> {
+    if detail.contains("unauthorized") || detail.contains("offline") {
+        return None;
+    }
+    let address = serial.parse::<SocketAddr>().ok()?;
+    address
+        .ip()
+        .is_ipv4()
+        .then(|| (address.ip().to_string(), address.port()))
+}
+
+fn adb_network_endpoints() -> BTreeMap<String, u16> {
+    let mut endpoints = BTreeMap::new();
+    for (serial, detail) in adbx::list_devices() {
+        if let Some((ip, port)) = adb_network_endpoint(&serial, &detail) {
+            endpoints.insert(ip, port);
+        }
+    }
+    endpoints
 }
 
 /// 本机所有 IPv4 网段（排除回环）。返回 (本机ip, 前缀长度)。
@@ -283,15 +318,24 @@ pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -
         }
     }
 
+    let adb_endpoints = adb_network_endpoints();
     let mut hits: Vec<Hit> = by_ip.into_values().collect();
     hits.sort_by(|a, b| ip_key(&a.ip).cmp(&ip_key(&b.ip)));
 
     // ③ banner + MAC + 指纹认领
     for h in hits.iter_mut() {
-        if h.open.contains(&22) {
-            h.banner = ssh_banner(&h.ip, 22);
-        } else if h.open.contains(&8022) {
-            h.banner = ssh_banner(&h.ip, 8022);
+        if let Some(port) = ssh_port(h) {
+            h.banner = ssh_banner(&h.ip, port);
+            if is_ssh_banner(&h.banner) {
+                h.transport = Some(Transport::Ssh);
+                h.login_port = port;
+            }
+        }
+        if h.transport.is_none()
+            && adb_endpoints.get(&h.ip).is_some_and(|port| h.open.contains(port))
+        {
+            h.transport = Some(Transport::Adb);
+            h.login_port = *adb_endpoints.get(&h.ip).unwrap_or(&5555);
         }
         if let Some(mac) = arp.get(&h.ip) {
             h.mac = mac.clone();
@@ -314,6 +358,9 @@ pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -
                 .map(|d| d.name.clone());
         }
     }
+    // mDNS, HTTP, telnet, and a bare TCP 5555 listener are discovery hints, not
+    // usable Ferry login paths. Keep only SSH-banner or verified ADB endpoints.
+    hits.retain(|hit| hit.transport.is_some());
     hits
 }
 
@@ -363,10 +410,8 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
             .open
             .iter()
             .map(|p| match p {
-                22 | 8022 => green(&format!("ssh:{}", p)),
-                5555 => cyan("adb:5555"),
-                23 => yellow("telnet"),
-                80 => "http".to_string(),
+                22 | 8022 if h.transport == Some(Transport::Ssh) && *p == h.login_port => green(&format!("ssh:{}", p)),
+                5555 if h.transport == Some(Transport::Adb) && *p == h.login_port => cyan(&format!("adb:{}", p)),
                 other => other.to_string(),
             })
             .collect::<Vec<_>>()
@@ -394,7 +439,7 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
         println!("{}", bold("网络:"));
         print_table(&["IP", "服务", "MAC", "认领", "发现", "banner"], &rows);
     } else {
-        info("网络上没扫到开放 ssh/adb/telnet 的设备");
+        info("网络上没扫到可通过 SSH 或已授权 ADB 登录的设备");
     }
 
     // 老朋友换 IP：提议改档案
@@ -455,10 +500,12 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
     if do_add {
         let mut candidates: Vec<String> = vec![];
         for h in &hits {
-            if h.known_as.is_none()
-                && (h.open.contains(&22) || h.open.contains(&5555) || h.open.contains(&8022))
-            {
-                candidates.push(format!("ssh {}", h.ip));
+            if h.known_as.is_none() {
+                match h.transport {
+                    Some(Transport::Ssh) => candidates.push(format!("ssh {} {}", h.ip, h.login_port)),
+                    Some(Transport::Adb) => candidates.push(format!("adb {} {}", h.ip, h.login_port)),
+                    _ => {}
+                }
             }
         }
         for (serial, _) in &adbs {
@@ -488,10 +535,12 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
             let mut toks = c.split_whitespace();
             let kind = toks.next().unwrap_or("");
             let addr = toks.next().unwrap_or("").to_string();
+            let port = toks.next().and_then(|value| value.parse::<u16>().ok()).unwrap_or(22);
             let mut d = Device::new(&name, Transport::Ssh);
             match kind {
                 "ssh" => {
                     d.host = addr;
+                    d.port = port;
                     let user = prompt("用户名 (默认 root):");
                     if !user.is_empty() {
                         d.user = user;
@@ -503,7 +552,7 @@ pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: 
                 }
                 "adb" => {
                     d.transport = Transport::Adb;
-                    d.adb_serial = Some(addr);
+                    d.adb_serial = Some(format!("{}:{}", addr, port));
                 }
                 "serial" => {
                     d.transport = Transport::Serial;
@@ -548,6 +597,13 @@ pub fn scan_json(
                 ("banner", J::s(&h.banner)),
                 ("hostname", J::s(&h.hostname)),
                 ("via", J::s(&h.via)),
+                (
+                    "transport",
+                    h.transport
+                        .map(|transport| J::s(transport.as_str()))
+                        .unwrap_or(J::Null),
+                ),
+                ("login_port", J::i(h.login_port as i64)),
                 ("known_as", h.known_as.clone().map(J::s).unwrap_or(J::Null)),
                 (
                     "legacy_hint",
@@ -644,5 +700,24 @@ mod tests {
     fn ip_key_orders_numerically() {
         assert!(ip_key("192.168.1.2") < ip_key("192.168.1.10"));
         assert!(ip_key("10.0.0.1") < ip_key("192.168.0.1"));
+    }
+
+    #[test]
+    fn accepts_only_real_ssh_protocol_banners() {
+        assert!(is_ssh_banner("SSH-2.0-OpenSSH_9.6"));
+        assert!(is_ssh_banner("SSH-1.99-dropbear_2022.83"));
+        assert!(!is_ssh_banner("HTTP/1.1 200 OK"));
+        assert!(!is_ssh_banner(""));
+    }
+
+    #[test]
+    fn accepts_only_authorized_network_adb_endpoints() {
+        assert_eq!(
+            adb_network_endpoint("192.168.2.2:5555", "device product:rk3588"),
+            Some(("192.168.2.2".into(), 5555))
+        );
+        assert_eq!(adb_network_endpoint("192.168.2.2:5555", "unauthorized"), None);
+        assert_eq!(adb_network_endpoint("192.168.2.2:5555", "offline"), None);
+        assert_eq!(adb_network_endpoint("usb-serial", "device"), None);
     }
 }

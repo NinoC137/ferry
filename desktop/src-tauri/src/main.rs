@@ -103,7 +103,7 @@ struct ScanRequest { subnet: String, use_mdns: bool }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ScanHit { ip: String, open: Vec<u16>, banner: String, mac: String, known_as: String, hostname: String, via: String, legacy: bool }
+struct ScanHit { ip: String, open: Vec<u16>, banner: String, mac: String, known_as: String, hostname: String, via: String, transport: String, login_port: u16, legacy: bool }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -419,6 +419,7 @@ fn scan_network(request: ScanRequest) -> Vec<ScanHit> {
         legacy: hit.banner.to_ascii_lowercase().contains("dropbear"),
         ip: hit.ip, open: hit.open, banner: hit.banner, mac: hit.mac,
         known_as: hit.known_as.unwrap_or_default(), hostname: hit.hostname, via: hit.via,
+        transport: hit.transport.map(|transport| transport.as_str().to_string()).unwrap_or_default(), login_port: hit.login_port,
     }).collect()
 }
 

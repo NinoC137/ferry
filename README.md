@@ -125,7 +125,7 @@ fy run rk ./app --help   # push, chmod, run, return remote exit code
 
 ### Device discovery and identity
 
-`fy scan` combines mDNS, a bounded concurrent TCP scan, SSH banner reads, ARP MAC lookup, ADB enumeration, and serial-port enumeration. It can recognize a saved board after DHCP or reflashing has moved its address.
+`fy scan` combines mDNS, a bounded concurrent TCP scan, SSH banner verification, ARP MAC lookup, ADB enumeration, and serial-port enumeration. Network results are deliberately actionable: Ferry keeps only endpoints with a valid SSH protocol banner or network ADB endpoints already reported as `device` by the local ADB server. HTTP, telnet, mDNS-only, unauthorized ADB, offline ADB, and a bare TCP port 5555 are not offered as device profiles. It can recognize a saved board after DHCP or reflashing has moved its address.
 
 ```bash
 fy scan
