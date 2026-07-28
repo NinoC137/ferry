@@ -61,7 +61,29 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     let socket: WebSocket | undefined;
     let resizeObserver: ResizeObserver | undefined;
     let disposed = false;
-    const pendingInput: Uint8Array[] = [];
+    let terminalReady = false;
+    let pendingInput = "";
+    let inputTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const flushInput = () => {
+      inputTimer = undefined;
+      if (!terminalReady || socket?.readyState !== WebSocket.OPEN || !pendingInput) return;
+      const data = pendingInput;
+      pendingInput = "";
+      socket.send(encoder.encode(data));
+    };
+    const queueInput = (data: string) => {
+      pendingInput += data;
+      // Terminal control bytes cannot wait behind the small typing coalescer:
+      // this keeps Tab completion, Enter, Ctrl-C, Escape and other controls native.
+      const isControl = Array.from(data).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+      if (isControl) {
+        if (inputTimer) clearTimeout(inputTimer);
+        flushInput();
+      } else if (!inputTimer) {
+        inputTimer = setTimeout(flushInput, 8);
+      }
+    };
 
     const sendResize = () => {
       if (!visible.current || socket?.readyState !== WebSocket.OPEN) return;
@@ -92,17 +114,20 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
         socket.binaryType = "arraybuffer";
         socket.onopen = () => {
           sendResize();
-          for (const bytes of pendingInput.splice(0)) socket?.send(bytes);
-          term.focus();
         };
         socket.onmessage = (event) => {
-          if (typeof event.data === "string") term.write(event.data);
+          if (event.data === '{"t":"terminal-ready"}') {
+            terminalReady = true;
+            flushInput();
+            term.focus();
+          } else if (typeof event.data === "string") term.write(event.data);
           else term.write(new Uint8Array(event.data));
         };
         socket.onerror = () => {
           if (!disposed) onActivity(`${deviceName}: terminal WebSocket error`);
         };
         socket.onclose = () => {
+          terminalReady = false;
           if (!disposed) {
             term.writeln("\r\n\x1b[38;5;203mTerminal connection closed.\x1b[0m");
             onActivity(`${deviceName}: terminal connection closed`);
@@ -115,17 +140,14 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     };
     void start();
 
-    // This is intentionally a direct byte stream. WebSocket preserves frame
-    // order, so fast typing, paste, Tab completion, and escape sequences reach
-    // the PTY exactly as xterm generated them.
+    // Coalesce ordinary typing for a few milliseconds. A rapid "pwd" becomes
+    // one ordered frame, while every terminal control byte flushes immediately.
     const dataDisposable = term.onData((data) => {
       if (!desktopAvailable) {
         term.write(data);
         return;
       }
-      const bytes = encoder.encode(data);
-      if (socket?.readyState === WebSocket.OPEN) socket.send(bytes);
-      else pendingInput.push(bytes);
+      queueInput(data);
     });
 
     if (host.current) {
@@ -139,6 +161,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       disposed = true;
       dataDisposable.dispose();
       resizeObserver?.disconnect();
+      if (inputTimer) clearTimeout(inputTimer);
       socket?.close();
       syncSize.current = () => {};
       term.dispose();

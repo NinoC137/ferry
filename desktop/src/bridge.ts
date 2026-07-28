@@ -65,6 +65,8 @@ export async function saveDevice(form: DeviceForm): Promise<DeviceForm> {
   return isDesktop ? invoke<DeviceForm>("save_device", { form }) : form;
 }
 
+export const removeDevice = (name: string) => invoke<OperationResult>("remove_device", { name });
+
 export async function checkConnection(name: string): Promise<ProbeResult> {
   if (isDesktop) return invoke<ProbeResult>("check_connection", { name });
   const device = demoDevices.find((item) => item.name === name) ?? demoDevices[0];

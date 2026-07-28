@@ -23,10 +23,11 @@ import {
   Server,
   Settings2,
   TerminalSquare,
+  Trash2,
   Usb,
   X,
 } from "lucide-react";
-import { checkConnection, discoverLocalDevices, getDevice, listDevices, saveDevice, setupSshKey } from "./bridge";
+import { checkConnection, discoverLocalDevices, getDevice, listDevices, removeDevice, saveDevice, setupSshKey } from "./bridge";
 import { OperationsPanel } from "./OperationsPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { PluginsPanel } from "./PluginsPanel";
@@ -65,6 +66,7 @@ function App() {
   const [keyPassword, setKeyPassword] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyConfirmOpen, setKeyConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const addActivity = useCallback((message: string) => {
     setActivity((entries) => [`${new Date().toLocaleTimeString()}  ${message}`, ...entries].slice(0, 30));
@@ -180,6 +182,28 @@ function App() {
     }
   };
 
+  const deleteProfile = async () => {
+    if (!selected || creating) return;
+    const deleted = selected;
+    setDeleteConfirmOpen(false);
+    setBusy(true);
+    try {
+      const result = await removeDevice(deleted);
+      const remaining = devices.filter((device) => device.name !== deleted);
+      const next = remaining[0]?.name ?? "";
+      setDevices(remaining);
+      setSelected(next);
+      setForm(newDevice());
+      setConnectionMessage(result.detail);
+      addActivity(result.detail);
+    } catch (error) {
+      setConnectionMessage(`Profile removal failed: ${String(error)}`);
+      addActivity(`${deleted}: profile removal failed`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openTerminal = () => {
     if (!selected) return;
     const id = `pending-${Date.now()}`;
@@ -267,6 +291,7 @@ function App() {
             <label>Deploy directory<input value={form.dest} onChange={(event) => setField("dest", event.target.value)} /></label>
             <label>Notes<textarea value={form.notes} onChange={(event) => setField("notes", event.target.value)} rows={2} /></label>
             <button className="save-button" onClick={() => void save()}><Save size={16} />Save profile</button>
+            {!creating && selected && <button className="delete-profile-button" disabled={busy || keyBusy} onClick={() => setDeleteConfirmOpen(true)}><Trash2 size={15} />Delete profile</button>}
           </div>
         </section>
       </aside>
@@ -313,6 +338,7 @@ function App() {
         <footer className="statusbar"><span><span className="status-dot online" /> Desktop ready</span><span>{selectedDevice?.transport?.toUpperCase() ?? "NO DEVICE"}</span><span>{tabs.length} terminal {tabs.length === 1 ? "session" : "sessions"}</span></footer>
       </section>
       {keyConfirmOpen && <div className="modal-backdrop" role="presentation"><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="key-confirm-title"><KeyRound size={20} /><h2 id="key-confirm-title">Install SSH public key?</h2><p>Ferry will add this computer's public key to <code>{selected}</code>, including the Dropbear key path when present, then verify login with password authentication disabled.</p><p>The one-time password is not saved.</p><div className="modal-actions"><button onClick={() => setKeyConfirmOpen(false)}>Cancel</button><button className="confirm-button" onClick={() => void installPublicKey()}>Install and verify</button></div></section></div>}
+      {deleteConfirmOpen && <div className="modal-backdrop" role="presentation"><section className="confirm-modal destructive-modal" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title"><Trash2 size={20} /><h2 id="delete-confirm-title">Delete device profile?</h2><p>Ferry will remove the saved profile and local fingerprint for <code>{selected}</code>. The remote device is not changed.</p><p>Any terminal session already open for this device remains connected until you close its tab.</p><div className="modal-actions"><button onClick={() => setDeleteConfirmOpen(false)}>Cancel</button><button className="delete-confirm-button" onClick={() => void deleteProfile()}>Delete profile</button></div></section></div>}
     </main>
   );
 }

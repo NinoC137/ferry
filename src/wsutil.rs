@@ -204,6 +204,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reads_many_adjacent_masked_input_frames_without_loss() {
+        fn client_frame(payload: &[u8]) -> Vec<u8> {
+            let mask = [0x37u8, 0xfa, 0x21, 0x3d];
+            let mut frame = vec![0x82, 0x80 | payload.len() as u8];
+            frame.extend_from_slice(&mask);
+            for (index, byte) in payload.iter().enumerate() {
+                frame.push(byte ^ mask[index % mask.len()]);
+            }
+            frame
+        }
+
+        let expected = b"pwd\r0123456789abcdefghijklmnopqrstuvwxyz";
+        let mut stream = Vec::new();
+        for byte in expected {
+            stream.extend(client_frame(&[*byte]));
+        }
+        let mut input = std::io::Cursor::new(stream);
+        let mut received = Vec::new();
+        for _ in expected {
+            match ws_read(&mut input).unwrap() {
+                WsMsg::Binary(frame) => received.extend(frame),
+                other => panic!("unexpected websocket message: {other:?}"),
+            }
+        }
+        assert_eq!(received, expected);
+    }
+
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{:02x}", x)).collect()
     }

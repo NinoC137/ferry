@@ -279,6 +279,20 @@ fn save_device(form: DeviceForm) -> Result<DeviceForm, String> {
 }
 
 #[tauri::command]
+fn remove_device(name: String) -> Result<OperationResult, String> {
+    let mut cfg = Config::load();
+    if cfg.devices.remove(&name).is_none() {
+        return Err(format!("Unknown device '{name}'."));
+    }
+    cfg.save().map_err(|error| error.to_string())?;
+    let _ = std::fs::remove_file(ferry::config::facts_path(&name));
+    Ok(OperationResult {
+        ok: true,
+        detail: format!("Profile '{name}' and its local fingerprint were removed."),
+    })
+}
+
+#[tauri::command]
 fn check_connection(name: String) -> Result<ProbeResult, String> {
     let d = Config::load()
         .find(&name)
@@ -606,7 +620,7 @@ fn write_handshake(stream: &mut TcpStream, key: &str) -> Result<(), String> {
 
 fn bridge_pty(
     incoming: &mut BufReader<TcpStream>,
-    response: TcpStream,
+    mut response: TcpStream,
     device: &Device,
     rows: u16,
     cols: u16,
@@ -646,6 +660,8 @@ fn bridge_pty(
         .map_err(|_| "Terminal state became unavailable.")?
         .writer()
         .map_err(|e| format!("Unable to write terminal input: {e}"))?;
+    wsutil::ws_write_text(&mut response, r#"{"t":"terminal-ready"}"#)
+        .map_err(|e| format!("Unable to mark terminal ready: {e}"))?;
     bridge_pty_io(incoming, response, pty, reader, writer);
     Ok(())
 }
@@ -717,7 +733,7 @@ fn bridge_pty_io(
 
 fn bridge_serial(
     incoming: &mut BufReader<TcpStream>,
-    response: TcpStream,
+    mut response: TcpStream,
     device: &Device,
 ) -> Result<(), String> {
     let (reader, writer): (Box<dyn Read + Send>, Box<dyn Write + Send>) =
@@ -736,6 +752,8 @@ fn bridge_serial(
             let reader = stream.try_clone().map_err(|e| e.to_string())?;
             (Box::new(reader), Box::new(stream))
         };
+    wsutil::ws_write_text(&mut response, r#"{"t":"terminal-ready"}"#)
+        .map_err(|e| format!("Unable to mark terminal ready: {e}"))?;
     bridge_stream_io(incoming, response, reader, writer);
     Ok(())
 }
@@ -811,6 +829,7 @@ fn main() {
             list_devices,
             get_device,
             save_device,
+            remove_device,
             check_connection,
             setup_ssh_key,
             list_plugins,
