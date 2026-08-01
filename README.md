@@ -130,6 +130,7 @@ fy run rk ./app --help   # push, chmod, run, return remote exit code
 ```bash
 fy scan
 fy scan --subnet 192.168.2.0/24
+fy scan --ports 2222,2200
 fy scan --no-mdns
 fy scan --add
 ```
@@ -194,6 +195,13 @@ fy plugin run sysroot-sync rk -- --dest /opt/sysroot
 # A user-writable sysroot needs no sudo. --delete mirrors target-side deletions locally.
 fy plugin run sysroot-sync rk -- --dest ~/ferry-sysroots/rk --no-sudo --delete
 
+# Install the maintained read-only device-tree collector. SSH and ADB profiles are supported.
+fy plugin install device-tree-pull
+fy plugin run device-tree-pull rk -- --out ./rk-hardware
+
+# Keep the raw device-tree archive while limiting decoded DT nodes in hardware.json.
+fy plugin run device-tree-pull rk -- --out ./rk-hardware --max-dt-nodes 512
+
 # Install a reviewed package developed locally.
 fy plugin install /path/to/my-ferry-plugin
 ```
@@ -206,7 +214,9 @@ rsync -av -e "ssh <Ferry SSH options>" user@target:/usr/lib     <sysroot>/usr/
 rsync -av -e "ssh <Ferry SSH options>" user@target:/usr/include <sysroot>/usr/
 ```
 
-It reads from the target and writes only the chosen host directory. `--delete` is deliberately opt-in because it can remove local sysroot files. The desktop Plugins workbench uses SSH key authentication only and never passes a saved profile password to a plugin. It defaults to a user-writable destination; selecting sudo for `/opt/sysroot` requires a previously authorized `sudo -v` session because a background desktop command cannot safely prompt for a host password.
+`device-tree-pull` is a maintained native plugin package rather than a duplicate shell implementation: it calls Ferry's read-only hardware collector, recovers `device-tree.tar`, `hardware.json`, and optionally `peripherals.md`, then removes its target temporary directory. It accepts `--out <new-or-empty-directory>`, `--no-brief`, and `--max-dt-nodes N`; raw archive recovery depends on a target-side `tar` implementation. It intentionally excludes serial profiles because they cannot safely carry the binary archive.
+
+Sysroot Sync reads from the target and writes only the chosen host directory. `--delete` is deliberately opt-in because it can remove local sysroot files. The desktop Plugins workbench uses SSH key authentication only and never passes a saved profile password to a plugin. It defaults to a user-writable destination; selecting sudo for `/opt/sysroot` requires a previously authorized `sudo -v` session because a background desktop command cannot safely prompt for a host password. The same key-only restriction applies to the desktop Device Tree Pull workflow; ADB needs an already-authorized local ADB connection.
 
 ### Forwarding and resilient connectivity
 
@@ -288,7 +298,7 @@ fy ui --port 8000 --no-open
 
 ### Tauri desktop workbench
 
-The repository also contains a native desktop client in `desktop/`. It reuses Ferry device modules and the same PTY/WebSocket transport, with fleet overview, discovery, device profile drafts, xterm sessions, transfer/forward/top/black-box panels, guarded network/recovery workflows, and a Plugins workbench for installing local packages and running sysroot synchronization with a visible preflight plan.
+The repository also contains a native desktop client in `desktop/`. It reuses Ferry device modules and the same PTY/WebSocket transport, with fleet overview, discovery, device profile drafts, xterm sessions, transfer/forward/top/black-box panels, guarded network/recovery workflows, and a Plugins workbench for installing local packages, synchronizing sysroots, and pulling a live device-tree archive with a visible preflight plan.
 
 ```bash
 cd desktop
@@ -312,7 +322,7 @@ fy hw brief ./rk-hardware/hardware.json
 fy hw brief ./rk-hardware/hardware.json --out ./peripherals.md
 ```
 
-The report directory contains `hardware.json`, `peripherals.md`, and, when the target supports `tar`, a `device-tree.tar` archive. Hardware identifiers are redacted by default; opt in only when appropriate for your environment.
+The report directory contains `hardware.json`, `peripherals.md`, and, when the target supports `tar`, a `device-tree.tar` archive. Hardware identifiers are redacted by default; opt in only when appropriate for your environment. On Android, Ferry detects the target before deploying the collector: ADB prefers `/data/local/tmp`, while SSH tries the SimpleSSHD private files directory first; both fall back to `/sdcard` or `/storage/emulated/0` only when necessary. This avoids assuming `/tmp` is writable on Android.
 
 ## Automation and JSON
 

@@ -14,7 +14,10 @@ use std::net::{SocketAddr, TcpStream};
 
 use std::time::Duration;
 
-const PROBE_PORTS: &[u16] = &[22, 5555, 8022];
+/// Default login endpoints. Extra ports are opt-in so a normal local scan stays
+/// bounded and does not turn into a broad, non-actionable port scan.
+const DEFAULT_PROBE_PORTS: &[u16] = &[22, 5555, 8022];
+const DEFAULT_SSH_PORTS: &[u16] = &[22, 8022];
 
 #[derive(Debug, Clone, Default)]
 pub struct Hit {
@@ -33,10 +36,61 @@ pub struct Hit {
     pub login_port: u16,
 }
 
-fn ssh_port(hit: &Hit) -> Option<u16> {
-    [22, 8022]
-        .into_iter()
+fn ssh_port(hit: &Hit, candidates: &[u16]) -> Option<u16> {
+    candidates
+        .iter()
+        .copied()
         .find(|port| hit.open.contains(port))
+}
+
+/// Parse the comma-separated `--ports` / desktop input once, before work is
+/// dispatched to the scan workers. A short cap prevents accidental full-port
+/// scans from multiplying the per-host work without bound.
+pub fn parse_extra_ports(raw: &str) -> Result<Vec<u16>, String> {
+    if raw.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    let mut ports = vec![];
+    for value in raw.split(',') {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err("Extra ports must be a comma-separated list, for example: 2222, 2200".into());
+        }
+        let port = value
+            .parse::<u16>()
+            .map_err(|_| format!("'{value}' is not a valid TCP port."))?;
+        if port == 0 {
+            return Err("TCP port 0 cannot be scanned.".into());
+        }
+        if !ports.contains(&port) {
+            ports.push(port);
+        }
+    }
+    if ports.len() > 16 {
+        return Err("At most 16 extra ports may be scanned at once.".into());
+    }
+    Ok(ports)
+}
+
+fn probe_ports_for(extra_ports: &[u16]) -> Vec<u16> {
+    let mut ports = DEFAULT_PROBE_PORTS.to_vec();
+    for &port in extra_ports {
+        if port != 0 && !ports.contains(&port) {
+            ports.push(port);
+        }
+    }
+    ports.sort_unstable();
+    ports
+}
+
+fn ssh_ports_for(extra_ports: &[u16]) -> Vec<u16> {
+    let mut ports = DEFAULT_SSH_PORTS.to_vec();
+    for &port in extra_ports {
+        if port != 0 && !ports.contains(&port) {
+            ports.push(port);
+        }
+    }
+    ports
 }
 
 fn is_ssh_banner(banner: &str) -> bool {
@@ -205,13 +259,17 @@ fn build_targets(subnet_override: Option<&str>) -> Vec<String> {
 const WORKERS: usize = 128;
 
 /// 有界线程池：共享一个原子游标去领任务，不给每个 IP 都开线程。
-fn probe_ports(targets: &[String], hot: &BTreeMap<String, String>) -> BTreeMap<String, Vec<u16>> {
+fn probe_ports(
+    targets: &[String],
+    hot: &BTreeMap<String, String>,
+    ports: &[u16],
+) -> BTreeMap<String, Vec<u16>> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
-    let mut tasks: Vec<(String, u16)> = Vec::with_capacity(targets.len() * PROBE_PORTS.len());
+    let mut tasks: Vec<(String, u16)> = Vec::with_capacity(targets.len() * ports.len());
     for ip in targets {
-        for &p in PROBE_PORTS {
+        for &p in ports {
             tasks.push((ip.clone(), p));
         }
     }
@@ -261,6 +319,20 @@ fn probe_ports(targets: &[String], hot: &BTreeMap<String, String>) -> BTreeMap<S
 
 /// 主扫描：mDNS 先问一嘴，再并发扫端口，最后合并 + 指纹认领。
 pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -> Vec<Hit> {
+    sweep_opts_with_ports(cfg, subnet_override, use_mdns, &[])
+}
+
+/// Run discovery with explicitly requested extra SSH ports. Each extra port is
+/// still retained only after it identifies itself as SSH, preserving the
+/// actionable-result contract of `fy scan`.
+pub fn sweep_opts_with_ports(
+    cfg: &Config,
+    subnet_override: Option<&str>,
+    use_mdns: bool,
+    extra_ports: &[u16],
+) -> Vec<Hit> {
+    let scan_ports = probe_ports_for(extra_ports);
+    let ssh_ports = ssh_ports_for(extra_ports);
     // ① mDNS：一个组播包换一批"自报家门"的设备，比暴力扫快得多也全得多
     let mut mdns_hits: Vec<crate::mdns::MdnsHit> = vec![];
     if use_mdns {
@@ -284,11 +356,11 @@ pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -
         info(&format!(
             "并发扫描 {} 个地址 × {} 端口（{} 并发）...",
             targets.len(),
-            PROBE_PORTS.len(),
+            scan_ports.len(),
             WORKERS
         ));
     }
-    let open_map = probe_ports(&targets, &arp);
+    let open_map = probe_ports(&targets, &arp, &scan_ports);
 
     let mut by_ip: BTreeMap<String, Hit> = BTreeMap::new();
     for (ip, open) in open_map {
@@ -324,7 +396,7 @@ pub fn sweep_opts(cfg: &Config, subnet_override: Option<&str>, use_mdns: bool) -
 
     // ③ banner + MAC + 指纹认领
     for h in hits.iter_mut() {
-        if let Some(port) = ssh_port(h) {
+        if let Some(port) = ssh_port(h, &ssh_ports) {
             h.banner = ssh_banner(&h.ip, port);
             if is_ssh_banner(&h.banner) {
                 h.transport = Some(Transport::Ssh);
@@ -403,16 +475,34 @@ fn expand_cidr(cidr: &str) -> Vec<String> {
 
 /// `fy scan` 入口：网络 + adb + 串口 三合一视图，可交互建档/认领。
 pub fn scan_cmd(cfg: &mut Config, subnet: Option<&str>, do_add: bool, use_mdns: bool) {
-    let hits = sweep_opts(cfg, subnet, use_mdns);
+    scan_cmd_with_ports(cfg, subnet, do_add, use_mdns, &[])
+}
+
+pub fn scan_cmd_with_ports(
+    cfg: &mut Config,
+    subnet: Option<&str>,
+    do_add: bool,
+    use_mdns: bool,
+    extra_ports: &[u16],
+) {
+    let hits = if extra_ports.is_empty() {
+        sweep_opts(cfg, subnet, use_mdns)
+    } else {
+        sweep_opts_with_ports(cfg, subnet, use_mdns, extra_ports)
+    };
     let mut rows: Vec<Vec<String>> = vec![];
     for h in &hits {
         let svc = h
             .open
             .iter()
-            .map(|p| match p {
-                22 | 8022 if h.transport == Some(Transport::Ssh) && *p == h.login_port => green(&format!("ssh:{}", p)),
-                5555 if h.transport == Some(Transport::Adb) && *p == h.login_port => cyan(&format!("adb:{}", p)),
-                other => other.to_string(),
+            .map(|p| {
+                if h.transport == Some(Transport::Ssh) && *p == h.login_port {
+                    green(&format!("ssh:{}", p))
+                } else if h.transport == Some(Transport::Adb) && *p == h.login_port {
+                    cyan(&format!("adb:{}", p))
+                } else {
+                    p.to_string()
+                }
             })
             .collect::<Vec<_>>()
             .join(" ");
@@ -582,8 +672,17 @@ pub fn scan_json(
     subnet: Option<&str>,
     use_mdns: bool,
 ) -> Vec<(&'static str, crate::jsonout::J)> {
+    scan_json_with_ports(cfg, subnet, use_mdns, &[])
+}
+
+pub fn scan_json_with_ports(
+    cfg: &Config,
+    subnet: Option<&str>,
+    use_mdns: bool,
+    extra_ports: &[u16],
+) -> Vec<(&'static str, crate::jsonout::J)> {
     use crate::jsonout::J;
-    let hits = sweep_opts(cfg, subnet, use_mdns);
+    let hits = sweep_opts_with_ports(cfg, subnet, use_mdns, extra_ports);
     let net: Vec<J> = hits
         .iter()
         .map(|h| {
@@ -692,7 +791,7 @@ mod tests {
         let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
         assert!(TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok());
         let t = std::time::Instant::now();
-        let _ = probe_ports(&targets, &hot);
+        let _ = probe_ports(&targets, &hot, DEFAULT_PROBE_PORTS);
         assert!(t.elapsed() < Duration::from_secs(5), "单地址扫描不该这么慢");
     }
 
@@ -719,5 +818,21 @@ mod tests {
         assert_eq!(adb_network_endpoint("192.168.2.2:5555", "unauthorized"), None);
         assert_eq!(adb_network_endpoint("192.168.2.2:5555", "offline"), None);
         assert_eq!(adb_network_endpoint("usb-serial", "device"), None);
+    }
+
+    #[test]
+    fn parses_and_adds_explicit_scan_ports() {
+        assert_eq!(parse_extra_ports("2222, 2200,2222").unwrap(), vec![2222, 2200]);
+        assert!(parse_extra_ports("2222,").is_err());
+        assert!(parse_extra_ports("0").is_err());
+        assert!(parse_extra_ports("not-a-port").is_err());
+
+        assert_eq!(probe_ports_for(&[2222]), vec![22, 2222, 5555, 8022]);
+        assert_eq!(ssh_ports_for(&[2222]), vec![22, 8022, 2222]);
+        let hit = Hit {
+            open: vec![2222],
+            ..Default::default()
+        };
+        assert_eq!(ssh_port(&hit, &ssh_ports_for(&[2222])), Some(2222));
     }
 }

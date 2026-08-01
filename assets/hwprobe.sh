@@ -5,6 +5,12 @@
 
 set -u
 
+# Android SSH daemons sometimes start non-interactive commands with an
+# application-only PATH. Restore the normal system command locations before
+# using any helper; harmless Linux paths are kept as a final fallback.
+PATH=${HWPROBE_PATH:-/system/bin:/system/xbin:/vendor/bin:/product/bin:/apex/com.android.runtime/bin:/usr/bin:/bin}
+export PATH
+
 VERSION=1.0.0
 MAX_DT_NODES=512
 MAX_TEXT_BYTES=24576
@@ -38,6 +44,51 @@ EOF
 
 die() { printf '%s\n' "hwprobe: $*" >&2; exit 2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Some Android images expose only /system/bin/toybox rather than individual
+# applet symlinks. Use it as a transparent fallback before declaring a tool
+# missing; no binary is copied to or installed on the target.
+install_toybox_fallbacks() {
+    have toybox || return
+    if ! have printf; then printf() { toybox printf "$@"; }; fi
+    if ! have awk; then awk() { toybox awk "$@"; }; fi
+    if ! have tr; then tr() { toybox tr "$@"; }; fi
+    if ! have head; then head() { toybox head "$@"; }; fi
+    if ! have mkdir; then mkdir() { toybox mkdir "$@"; }; fi
+    if ! have mv; then mv() { toybox mv "$@"; }; fi
+    if ! have rm; then rm() { toybox rm "$@"; }; fi
+    if ! have find; then find() { toybox find "$@"; }; fi
+    if ! have sort; then sort() { toybox sort "$@"; }; fi
+    if ! have wc; then wc() { toybox wc "$@"; }; fi
+    if ! have cut; then cut() { toybox cut "$@"; }; fi
+    if ! have od; then od() { toybox od "$@"; }; fi
+    if ! have tar; then tar() { toybox tar "$@"; }; fi
+}
+
+require_core_tools() {
+    missing=
+    for tool in printf awk tr head mkdir mv rm; do
+        if ! have "$tool"; then
+            [ -n "$missing" ] && missing="$missing, "
+            missing="$missing$tool"
+        fi
+    done
+    [ -z "$missing" ] || {
+        echo "hwprobe: target shell is missing required command(s): $missing" >&2
+        echo "hwprobe: checked PATH=$PATH" >&2
+        exit 127
+    }
+}
+
+# Do not depend on dirname: restricted Android SSH shells may provide only a
+# tiny command set. The caller supplies a file path, so POSIX parameter
+# expansion is sufficient and handles relative, absolute, and root paths.
+parent_dir() {
+    case "$1" in
+        */*) p=${1%/*}; [ -n "$p" ] && printf '%s' "$p" || printf / ;;
+        *) printf . ;;
+    esac
+}
 
 # JSON quote without jq/Python. Inputs are emitted one line at a time and all
 # data sources below are textual or converted to text before reaching here.
@@ -86,7 +137,7 @@ nul_strings_json() {
 path_exists_json() { [ -e "$1" ] || [ -L "$1" ] && printf true || printf false; }
 
 prepare_dt_root() {
-    [ -n "$DT_ROOT" ] && return
+    [ -n "${DT_ROOT:-}" ] && return
     if [ -d "$SYS_ROOT/firmware/devicetree/base" ]; then
         DT_ROOT=$SYS_ROOT/firmware/devicetree/base
     elif [ -d "$PROC_ROOT/device-tree" ]; then
@@ -224,7 +275,7 @@ emit_usb_devices() {
 }
 
 emit_dt_node() {
-    node=$1; rel=${node#"$DT_ROOT"}; [ -n "$rel" ] || rel=/
+    node=$1; rel=${node#"${DT_ROOT:-}"}; [ -n "$rel" ] || rel=/
     printf '{"path":'; json_q "$rel"
     printf ',"name":'; json_q "$(base "$node")"
     printf ',"compatible":'; nul_strings_json "$node/compatible"
@@ -251,10 +302,10 @@ emit_dt_nodes() {
 make_bundle() {
     BUNDLE_STATUS=not_requested; BUNDLE_PATH=
     [ "$BUNDLE" -eq 1 ] || return
-    [ -n "$DT_ROOT" ] || { BUNDLE_STATUS=device_tree_unavailable; return; }
+    [ -n "${DT_ROOT:-}" ] || { BUNDLE_STATUS=device_tree_unavailable; return; }
     [ -n "$OUT" ] || { BUNDLE_STATUS=requires_out_file; return; }
-    BUNDLE_PATH=$(dirname "$OUT")/device-tree.tar
-    if have tar && tar -cf "$BUNDLE_PATH" -C "$DT_ROOT" . 2>/dev/null; then
+    BUNDLE_PATH=$(parent_dir "$OUT")/device-tree.tar
+    if have tar && tar -cf "$BUNDLE_PATH" -C "${DT_ROOT:-}" . 2>/dev/null; then
         BUNDLE_STATUS=created
     else
         rm -f "$BUNDLE_PATH" 2>/dev/null || true
@@ -268,7 +319,7 @@ emit_report() {
     mkdir -p "$scratch" 2>/dev/null || true
     nodes_file=$scratch/hwprobe-dt-nodes-$$.txt
     trap 'rm -f "$nodes_file" 2>/dev/null || true' EXIT HUP INT TERM
-    if [ -n "$DT_ROOT" ] && have find; then find "$DT_ROOT" -type d 2>/dev/null | sort > "$nodes_file"; else : > "$nodes_file"; fi
+    if [ -n "${DT_ROOT:-}" ] && have find; then find "${DT_ROOT:-}" -type d 2>/dev/null | sort > "$nodes_file"; else : > "$nodes_file"; fi
     platform=linux; is_android && platform=android || true
     uid=$(id -u 2>/dev/null || printf '?'); privileged=false; [ "$uid" = 0 ] && privileged=true
 
@@ -311,10 +362,10 @@ emit_report() {
     printf ',"board_name":'; file_json "$SYS_ROOT/class/dmi/id/board_name" 256
     printf ',"product_serial":'; [ "$INCLUDE_IDENTIFIERS" -eq 1 ] && file_json "$SYS_ROOT/class/dmi/id/product_serial" 256 || printf null
     printf '}'
-    printf ',"device_tree":{"source":'; [ -n "$DT_ROOT" ] && json_q "$DT_ROOT" || printf null
-    printf ',"available":'; [ -n "$DT_ROOT" ] && printf true || printf false
-    printf ',"model":'; [ -n "$DT_ROOT" ] && file_json "$DT_ROOT/model" 512 || printf null
-    printf ',"compatible":'; [ -n "$DT_ROOT" ] && nul_strings_json "$DT_ROOT/compatible" || printf '[]'
+    printf ',"device_tree":{"source":'; [ -n "${DT_ROOT:-}" ] && json_q "${DT_ROOT:-}" || printf null
+    printf ',"available":'; [ -n "${DT_ROOT:-}" ] && printf true || printf false
+    printf ',"model":'; [ -n "${DT_ROOT:-}" ] && file_json "${DT_ROOT:-}/model" 512 || printf null
+    printf ',"compatible":'; [ -n "${DT_ROOT:-}" ] && nul_strings_json "${DT_ROOT:-}/compatible" || printf '[]'
     printf ',"nodes":'; emit_dt_nodes "$nodes_file"
     printf ',"node_count":%s,"emitted_node_count":%s,"truncated":' "${DT_NODE_TOTAL:-0}" "${DT_NODE_EMITTED:-0}"
     [ "${DT_NODE_TOTAL:-0}" -gt "${DT_NODE_EMITTED:-0}" ] 2>/dev/null && printf true || printf false
@@ -329,8 +380,8 @@ emit_doctor() {
     printf '{"schema":"hwprobe-doctor/v1","version":'; json_q "$VERSION"
     printf ',"proc_root":{"path":'; json_q "$PROC_ROOT"; printf ',"cpuinfo_readable":'; [ -r "$PROC_ROOT/cpuinfo" ] && printf true || printf false; printf '}'
     printf ',"sys_root":{"path":'; json_q "$SYS_ROOT"; printf ',"present":'; [ -d "$SYS_ROOT" ] && printf true || printf false; printf '}'
-    printf ',"device_tree":{"path":'; [ -n "$DT_ROOT" ] && json_q "$DT_ROOT" || printf null
-    printf ',"compatible_readable":'; [ -n "$DT_ROOT" ] && [ -r "$DT_ROOT/compatible" ] && printf true || printf false; printf '}'
+    printf ',"device_tree":{"path":'; [ -n "${DT_ROOT:-}" ] && json_q "${DT_ROOT:-}" || printf null
+    printf ',"compatible_readable":'; [ -n "${DT_ROOT:-}" ] && [ -r "${DT_ROOT:-}/compatible" ] && printf true || printf false; printf '}'
     printf ',"commands":{"find":'; have find && printf true || printf false
     printf ',"awk":'; have awk && printf true || printf false
     printf ',"od":'; have od && printf true || printf false
@@ -359,9 +410,9 @@ parse_args() {
 main() {
     cmd=${1:-collect}
     case "$cmd" in
-        collect) shift 2>/dev/null || true; parse_args "$@"
+        collect) shift 2>/dev/null || true; parse_args "$@"; install_toybox_fallbacks; require_core_tools
             if [ -n "$OUT" ]; then
-                out_dir=$(dirname "$OUT"); mkdir -p "$out_dir" || die "cannot create $out_dir"
+                out_dir=$(parent_dir "$OUT"); mkdir -p "$out_dir" || die "cannot create $out_dir"
                 tmp=$OUT.tmp.$$; emit_report > "$tmp" || { rm -f "$tmp"; die 'collection failed'; }
                 mv "$tmp" "$OUT" || die "cannot publish $OUT"
             else emit_report; fi ;;

@@ -6,15 +6,19 @@
 //! device context and consistent SSH options, but never saves plugin secrets.
 
 use crate::config::{Device, Transport};
+use crate::hwprobe;
 use crate::sshx;
 use crate::tomlite::Doc;
-use crate::util::{cfg_dir, ensure_dir, render_cmd, run_capture, run_inherit, which, Output};
+use crate::util::{cfg_dir, ensure_dir, home, render_cmd, run_capture, run_inherit, which, Output};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 const MANIFEST: &str = "plugin.toml";
 const SYSROOT_MANIFEST: &str = include_str!("../assets/plugins/sysroot-sync/plugin.toml");
 const SYSROOT_ENTRY: &str = include_str!("../assets/plugins/sysroot-sync/run.sh");
+const DEVICE_TREE_PULL_ID: &str = "device-tree-pull";
+const DEVICE_TREE_MANIFEST: &str = include_str!("../assets/plugins/device-tree-pull/plugin.toml");
+const DEVICE_TREE_ENTRY: &str = include_str!("../assets/plugins/device-tree-pull/run.sh");
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -44,7 +48,19 @@ pub fn plugins_dir() -> PathBuf {
 }
 
 pub fn builtin_ids() -> &'static [&'static str] {
-    &["sysroot-sync"]
+    &["sysroot-sync", DEVICE_TREE_PULL_ID]
+}
+
+fn builtin_assets(id: &str) -> Result<(&'static str, &'static str), String> {
+    match id {
+        "sysroot-sync" => Ok((SYSROOT_MANIFEST, SYSROOT_ENTRY)),
+        DEVICE_TREE_PULL_ID => Ok((DEVICE_TREE_MANIFEST, DEVICE_TREE_ENTRY)),
+        _ => Err(format!("no built-in plugin named '{id}'")),
+    }
+}
+
+fn is_device_tree_pull(plugin: &Plugin) -> bool {
+    plugin.id == DEVICE_TREE_PULL_ID
 }
 
 fn valid_id(value: &str) -> bool {
@@ -220,17 +236,15 @@ pub fn install_local(source: &Path, force: bool) -> Result<Plugin, String> {
 }
 
 pub fn install_builtin(id: &str, force: bool) -> Result<Plugin, String> {
-    if id != "sysroot-sync" {
-        return Err(format!("no built-in plugin named '{id}'"));
-    }
+    let (manifest, entry) = builtin_assets(id)?;
     ensure_dir(&plugins_dir()).map_err(|error| error.to_string())?;
     let staging = plugins_dir().join(format!(".builtin-{id}-{}", std::process::id()));
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    fs::write(staging.join(MANIFEST), SYSROOT_MANIFEST).map_err(|error| error.to_string())?;
-    fs::write(staging.join("run.sh"), SYSROOT_ENTRY).map_err(|error| error.to_string())?;
+    fs::write(staging.join(MANIFEST), manifest).map_err(|error| error.to_string())?;
+    fs::write(staging.join("run.sh"), entry).map_err(|error| error.to_string())?;
     make_entry_executable(&staging.join("run.sh"))?;
     let candidate = load_dir(&staging)?;
     let destination = plugin_dir(&candidate.id);
@@ -250,6 +264,20 @@ fn transport_matches(plugin: &Plugin, device: &Device) -> bool {
 }
 
 pub fn preflight(plugin: &Plugin, device: &Device) -> Result<(), String> {
+    if is_device_tree_pull(plugin) {
+        match device.transport {
+            Transport::Ssh if which("ssh").is_none() => {
+                return Err("device-tree-pull requires the host ssh command".into())
+            }
+            Transport::Adb if which("adb").is_none() => {
+                return Err("device-tree-pull requires the host adb command".into())
+            }
+            Transport::Serial => {
+                return Err("device-tree-pull requires an SSH or ADB profile; serial cannot safely recover binary device-tree data".into())
+            }
+            _ => {}
+        }
+    }
     if !transport_matches(plugin, device) {
         return Err(format!("plugin '{}' requires {} transport; '{}' uses {}", plugin.id, plugin.transport, device.name, device.transport.as_str()));
     }
@@ -266,9 +294,32 @@ pub fn preflight(plugin: &Plugin, device: &Device) -> Result<(), String> {
 
 pub fn preview(plugin: &Plugin, device: &Device, arguments: &[String]) -> Result<Vec<String>, String> {
     preflight(plugin, device)?;
+    if is_device_tree_pull(plugin) {
+        let options = device_tree_options(arguments)?;
+        let target = if device.transport == Transport::Ssh {
+            format!("{}@{}:{}", device.user, device.host, device.port)
+        } else {
+            device.endpoint()
+        };
+        let mut steps = vec![
+            format!("Target: {target}"),
+            "Risk: target-read + host-write".into(),
+            "Deploy Ferry's read-only hardware collector into a private target temporary directory.".into(),
+            format!("Recover raw device tree: {}", options.output_dir.join("device-tree.tar").display()),
+            format!("Recover hardware report: {}", options.output_dir.join("hardware.json").display()),
+            "Remove the target temporary directory after collection, including on a failed transfer.".into(),
+        ];
+        if options.brief {
+            steps.push(format!("Generate local peripheral brief: {}", options.output_dir.join("peripherals.md").display()));
+        }
+        if let Some(max) = options.max_dt_nodes {
+            steps.push(format!("Limit decoded device-tree nodes in hardware.json to {max}; raw device-tree.tar remains complete."));
+        }
+        return Ok(steps);
+    }
     let destination = arguments
         .windows(2)
-        .find(|window| window[0] == "--dest")
+        .find(|window| window[0] == "--dest" || window[0] == "--out")
         .map(|window| window[1].as_str())
         .unwrap_or("<destination>");
     let target = if device.transport == Transport::Ssh {
@@ -297,6 +348,99 @@ fn invocation_argv(plugin: &Plugin, arguments: &[String]) -> Result<Vec<String>,
     Ok(argv)
 }
 
+fn expand_home(value: &str) -> PathBuf {
+    if value == "~" {
+        return home();
+    }
+    value
+        .strip_prefix("~/")
+        .map(|relative| home().join(relative))
+        .unwrap_or_else(|| PathBuf::from(value))
+}
+
+fn device_tree_options(arguments: &[String]) -> Result<hwprobe::Options, String> {
+    let mut output_dir = None;
+    let mut brief = true;
+    let mut max_dt_nodes = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--out" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("device-tree-pull: --out requires a local directory".into());
+                };
+                output_dir = Some(expand_home(value));
+                index += 2;
+            }
+            "--no-brief" => {
+                brief = false;
+                index += 1;
+            }
+            "--max-dt-nodes" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("device-tree-pull: --max-dt-nodes requires a positive integer".into());
+                };
+                let parsed = value
+                    .parse::<u32>()
+                    .map_err(|_| "device-tree-pull: --max-dt-nodes requires a positive integer".to_string())?;
+                if parsed == 0 {
+                    return Err("device-tree-pull: --max-dt-nodes must be greater than zero".into());
+                }
+                max_dt_nodes = Some(parsed);
+                index += 2;
+            }
+            "-h" | "--help" => {
+                return Err("usage: device-tree-pull --out <local-directory> [--no-brief] [--max-dt-nodes N]".into())
+            }
+            value => return Err(format!("device-tree-pull: unknown argument '{value}'")),
+        }
+    }
+    let output_dir = output_dir.ok_or("device-tree-pull: --out <local-directory> is required")?;
+    Ok(hwprobe::Options {
+        output_dir,
+        bundle: true,
+        brief,
+        keep_remote: false,
+        include_identifiers: false,
+        max_dt_nodes,
+    })
+}
+
+fn run_device_tree_pull(
+    device: &Device,
+    arguments: &[String],
+    include_profile_password: bool,
+) -> Result<PluginOutput, String> {
+    let options = device_tree_options(arguments)?;
+    let mut device = device.clone();
+    if !include_profile_password {
+        // The desktop bundle cannot act as Ferry's CLI askpass helper. More
+        // importantly, this native operation needs no password exposure.
+        device.password = None;
+    }
+    let result = hwprobe::collect(&device, &options)?;
+    let mut stdout = format!(
+        "Device-tree collection completed for {}\nOutput directory: {}\nHardware report: {}\n",
+        device.name,
+        result.output_dir.display(),
+        result.report.display(),
+    );
+    if let Some(archive) = result.archive {
+        stdout.push_str(&format!("Raw device tree: {}\n", archive.display()));
+    } else {
+        stdout.push_str("Raw device-tree archive was unavailable: target tar support may be missing.\n");
+    }
+    if let Some(brief) = result.brief {
+        stdout.push_str(&format!("Peripheral brief: {}\n", brief.display()));
+    }
+    stdout.push_str("Target temporary files were removed.\n");
+    Ok(PluginOutput {
+        status: 0,
+        stdout,
+        stderr: String::new(),
+    })
+}
+
 fn environment(device: &Device, non_interactive: bool, include_profile_password: bool) -> Vec<(String, String)> {
     let mut environment = vec![
         ("FERRY_PLUGIN".into(), "1".into()),
@@ -322,12 +466,21 @@ fn environment(device: &Device, non_interactive: bool, include_profile_password:
 
 pub fn run_inherit_plugin(plugin: &Plugin, device: &Device, arguments: &[String]) -> Result<i32, String> {
     preflight(plugin, device)?;
+    if is_device_tree_pull(plugin) {
+        let output = run_device_tree_pull(device, arguments, true)?;
+        print!("{}", output.stdout);
+        eprint!("{}", output.stderr);
+        return Ok(output.status);
+    }
     let argv = invocation_argv(plugin, arguments)?;
     run_inherit(&argv, &environment(device, false, true)).map_err(|error| error.to_string())
 }
 
 pub fn run_capture_plugin(plugin: &Plugin, device: &Device, arguments: &[String]) -> Result<PluginOutput, String> {
     preflight(plugin, device)?;
+    if is_device_tree_pull(plugin) {
+        return run_device_tree_pull(device, arguments, false);
+    }
     let argv = invocation_argv(plugin, arguments)?;
     // A desktop host is not the `fy` askpass executable. It deliberately runs
     // plugins with key authentication only, so a stored profile password can
@@ -349,6 +502,13 @@ pub fn source_hint() -> String {
 }
 
 pub fn command_preview(plugin: &Plugin, arguments: &[String]) -> Result<String, String> {
+    if is_device_tree_pull(plugin) {
+        let options = device_tree_options(arguments)?;
+        return Ok(format!(
+            "Ferry native hardware collector --out {} --bundle",
+            options.output_dir.display()
+        ));
+    }
     Ok(render_cmd(&invocation_argv(plugin, arguments)?))
 }
 
@@ -363,11 +523,28 @@ mod tests {
         assert_eq!(plugin.transport, "ssh");
         assert!(relative_entry(&plugin.entry));
         assert!(plugin.requires.iter().any(|item| item == "rsync"));
+
+        let tree = parse_manifest(DEVICE_TREE_MANIFEST, PathBuf::from("/tmp/device-tree-pull")).unwrap();
+        assert_eq!(tree.id, DEVICE_TREE_PULL_ID);
+        assert_eq!(tree.transport, "any");
+        assert!(relative_entry(&tree.entry));
     }
 
     #[test]
     fn rejects_entrypoint_path_escape() {
         let manifest = SYSROOT_MANIFEST.replace("entry = \"run.sh\"", "entry = \"../run.sh\"");
         assert!(parse_manifest(&manifest, PathBuf::from("/tmp/plugin")).is_err());
+    }
+
+    #[test]
+    fn device_tree_pull_requires_an_empty_output_directory_argument() {
+        assert!(device_tree_options(&[]).is_err());
+        assert!(device_tree_options(&["--out".into(), "./tree".into(), "--max-dt-nodes".into(), "0".into()]).is_err());
+        let options = device_tree_options(&["--out".into(), "./tree".into(), "--no-brief".into(), "--max-dt-nodes".into(), "256".into()]).unwrap();
+        assert_eq!(options.output_dir, PathBuf::from("./tree"));
+        assert!(!options.brief);
+        assert_eq!(options.max_dt_nodes, Some(256));
+        assert!(options.bundle);
+        assert!(!options.keep_remote);
     }
 }

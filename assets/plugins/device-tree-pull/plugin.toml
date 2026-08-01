@@ -1,0 +1,12 @@
+[plugin]
+id = "device-tree-pull"
+name = "Device Tree Pull"
+version = "1.0.0"
+description = "Collect a raw live device-tree archive plus a hardware report from an SSH or ADB target."
+entry = "run.sh"
+transport = "any"
+risk = "target-read + host-write"
+requires = []
+arguments = ["--out <local-directory>", "--no-brief", "--max-dt-nodes <N>"]
+summary = "Uses Ferry's native read-only hardware collector; target temporary files are removed after recovery."
+preview = ["Deploy a read-only collector in a private target temporary directory", "Download raw device-tree.tar into <destination>", "Download hardware.json and generate peripherals.md locally", "Remove the target temporary directory"]

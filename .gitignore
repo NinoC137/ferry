@@ -1,2 +1,5 @@
 /target
 Cargo.lock
+
+# Device-local connectivity snapshot produced during diagnostics
+/desktop/connectivity-before.txt

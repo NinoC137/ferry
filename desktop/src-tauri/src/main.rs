@@ -99,7 +99,7 @@ struct DeviceCandidate { transport: String, value: String, detail: String }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ScanRequest { subnet: String, use_mdns: bool }
+struct ScanRequest { subnet: String, use_mdns: bool, extra_ports: String }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -412,15 +412,16 @@ fn discover_local_devices() -> Vec<DeviceCandidate> {
 }
 
 #[tauri::command]
-fn scan_network(request: ScanRequest) -> Vec<ScanHit> {
+fn scan_network(request: ScanRequest) -> Result<Vec<ScanHit>, String> {
     let cfg = Config::load();
     let subnet = (!request.subnet.trim().is_empty()).then_some(request.subnet.trim());
-    ferry::scan::sweep_opts(&cfg, subnet, request.use_mdns).into_iter().map(|hit| ScanHit {
+    let extra_ports = ferry::scan::parse_extra_ports(&request.extra_ports)?;
+    Ok(ferry::scan::sweep_opts_with_ports(&cfg, subnet, request.use_mdns, &extra_ports).into_iter().map(|hit| ScanHit {
         legacy: hit.banner.to_ascii_lowercase().contains("dropbear"),
         ip: hit.ip, open: hit.open, banner: hit.banner, mac: hit.mac,
         known_as: hit.known_as.unwrap_or_default(), hostname: hit.hostname, via: hit.via,
         transport: hit.transport.map(|transport| transport.as_str().to_string()).unwrap_or_default(), login_port: hit.login_port,
-    }).collect()
+    }).collect())
 }
 
 #[tauri::command]

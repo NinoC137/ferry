@@ -41,18 +41,77 @@ fn remote_capture(d: &Device, command: &str) -> std::io::Result<Output> {
     }
 }
 
-fn target_dir(d: &Device) -> String {
-    let base = if d.transport == Transport::Adb {
-        "/data/local/tmp"
-    } else {
-        "/tmp"
-    };
+fn target_dir(base: &str) -> String {
     format!(
         "{}/ferry-hwprobe-{}-{}",
         base,
         std::process::id(),
         crate::util::now_epoch()
     )
+}
+
+fn is_android_target(d: &Device) -> bool {
+    if d.transport == Transport::Adb {
+        return true;
+    }
+    remote_capture(
+        d,
+        "command -v getprop >/dev/null 2>&1 && { test -d /system || test -d /apex || test -n \"$(getprop ro.build.version.sdk 2>/dev/null)\"; }",
+    )
+    .map(|output| output.status == 0)
+    .unwrap_or(false)
+}
+
+fn temp_bases(transport: Transport, android: bool) -> &'static [&'static str] {
+    if !android {
+        return &["/tmp"];
+    }
+    match transport {
+        // `adb shell` normally owns /data/local/tmp. Public storage is a
+        // fallback for restricted devices where that namespace is unavailable.
+        Transport::Adb => &["/data/local/tmp", "/sdcard", "/storage/emulated/0"],
+        // SimpleSSHD runs under its application user, which can write its own
+        // files directory even on Android builds that mount /tmp read-only.
+        Transport::Ssh => &[
+            "/data/data/org.galexander.sshd/files",
+            "/data/local/tmp",
+            "/sdcard",
+            "/storage/emulated/0",
+        ],
+        Transport::Serial => &[],
+    }
+}
+
+fn prepare_remote_dir(d: &Device) -> std::result::Result<String, String> {
+    let android = is_android_target(d);
+    let bases = temp_bases(d.transport, android);
+    let mut failures = vec![];
+    for base in bases {
+        let dir = target_dir(base);
+        let quoted = shell_quote(&dir);
+        let check = format!(
+            "umask 077; mkdir -p {q} && test -d {q} && test -w {q}",
+            q = quoted
+        );
+        match remote_capture(d, &check) {
+            Ok(output) if output.status == 0 => return Ok(dir),
+            Ok(output) => {
+                let detail = if output.stderr.trim().is_empty() {
+                    output.stdout.trim()
+                } else {
+                    output.stderr.trim()
+                };
+                failures.push(format!("{base}: {detail}"));
+            }
+            Err(error) => failures.push(format!("{base}: {error}")),
+        }
+    }
+    let kind = if android { "Android" } else { "target" };
+    Err(format!(
+        "无法在 {kind} 上创建 Ferry 临时目录（尝试 {}）: {}",
+        bases.join(", "),
+        failures.join("; ")
+    ))
 }
 
 fn upload(d: &Device, remote_dir: &str, remote_script: &str) -> std::io::Result<()> {
@@ -62,7 +121,7 @@ fn upload(d: &Device, remote_dir: &str, remote_script: &str) -> std::io::Result<
             args.extend(sshx::base_opts(d));
             args.push(sshx::target(d));
             args.push(format!(
-                "mkdir -p {d} && cat > {s} && chmod 700 {s}",
+                "mkdir -p {d} && cat > {s} && (chmod 700 {s} 2>/dev/null || true)",
                 d = shell_quote(remote_dir),
                 s = shell_quote(remote_script)
             ));
@@ -105,12 +164,10 @@ fn upload(d: &Device, remote_dir: &str, remote_script: &str) -> std::io::Result<
             if out.status != 0 {
                 return Err(std::io::Error::new(std::io::ErrorKind::Other, out.stderr));
             }
-            let out = remote_capture(d, &format!("chmod 700 {}", shell_quote(remote_script)))?;
-            if out.status == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::new(std::io::ErrorKind::Other, out.stderr))
-            }
+            // The collector is invoked as `sh <script>`; execution permission
+            // is unnecessary and public Android storage commonly rejects chmod.
+            let _ = remote_capture(d, &format!("chmod 700 {} 2>/dev/null", shell_quote(remote_script)));
+            Ok(())
         }
         Transport::Serial => Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
@@ -195,7 +252,7 @@ pub fn collect(d: &Device, o: &Options) -> std::result::Result<Result, String> {
         return Err(format!("输出目录非空: {}", o.output_dir.display()));
     }
     fs::create_dir_all(&o.output_dir).map_err(|e| e.to_string())?;
-    let remote_dir = target_dir(d);
+    let remote_dir = prepare_remote_dir(d)?;
     let script = format!("{}/hwprobe.sh", remote_dir);
     let report = format!("{}/hardware.json", remote_dir);
     let work = (|| -> std::result::Result<(Option<PathBuf>, Option<PathBuf>), String> {
@@ -275,5 +332,36 @@ mod tests {
             .unwrap()
             .success());
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn embedded_script_uses_no_external_dirname_command() {
+        assert!(SCRIPT.contains("parent_dir()"));
+        assert!(!SCRIPT.contains("dirname \""));
+    }
+
+    #[test]
+    fn embedded_script_restores_a_system_path_before_collecting() {
+        assert!(SCRIPT.contains("PATH=${HWPROBE_PATH:-/system/bin:"));
+        assert!(SCRIPT.contains("install_toybox_fallbacks"));
+        assert!(SCRIPT.contains("require_core_tools"));
+    }
+
+    #[test]
+    fn selects_writable_android_temp_candidates_by_transport() {
+        assert_eq!(temp_bases(Transport::Ssh, false), &["/tmp"]);
+        assert_eq!(
+            temp_bases(Transport::Adb, true),
+            &["/data/local/tmp", "/sdcard", "/storage/emulated/0"]
+        );
+        assert_eq!(
+            temp_bases(Transport::Ssh, true),
+            &[
+                "/data/data/org.galexander.sshd/files",
+                "/data/local/tmp",
+                "/sdcard",
+                "/storage/emulated/0",
+            ]
+        );
     }
 }

@@ -84,7 +84,7 @@ export async function discoverLocalDevices(): Promise<DeviceCandidate[]> {
   return isDesktop ? invoke<DeviceCandidate[]>("discover_local_devices") : [];
 }
 
-export const scanNetwork = (subnet: string, useMdns: boolean) => invoke<ScanHit[]>("scan_network", { request: { subnet, useMdns } });
+export const scanNetwork = (subnet: string, useMdns: boolean, extraPorts: string) => invoke<ScanHit[]>("scan_network", { request: { subnet, useMdns, extraPorts } });
 
 export async function startTerminal(name: string, cols: number, rows: number, command?: string): Promise<TerminalStarted> {
   if (isDesktop) return invoke<TerminalStarted>("start_terminal", { name, cols, rows, command });

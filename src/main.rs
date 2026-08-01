@@ -1234,16 +1234,37 @@ fn cmd_scan(args: Vec<String>) -> i32 {
     let mut cfg = Config::load();
     let subnet = flag_val(&args, "--subnet");
     let use_mdns = !has_flag(&args, "--no-mdns");
+    let extra_ports = match flag_val(&args, "--ports") {
+        Some(value) => match scan::parse_extra_ports(&value) {
+            Ok(ports) => ports,
+            Err(error) => return fail(code::USAGE, &error),
+        },
+        None => vec![],
+    };
     if jsonout::json_mode() {
-        let fields = scan::scan_json(&cfg, subnet.as_deref(), use_mdns);
+        let fields = if extra_ports.is_empty() {
+            scan::scan_json(&cfg, subnet.as_deref(), use_mdns)
+        } else {
+            scan::scan_json_with_ports(&cfg, subnet.as_deref(), use_mdns, &extra_ports)
+        };
         return jsonout::emit_ok(fields);
     }
-    scan::scan_cmd(
-        &mut cfg,
-        subnet.as_deref(),
-        has_flag(&args, "--add"),
-        use_mdns,
-    );
+    if extra_ports.is_empty() {
+        scan::scan_cmd(
+            &mut cfg,
+            subnet.as_deref(),
+            has_flag(&args, "--add"),
+            use_mdns,
+        );
+    } else {
+        scan::scan_cmd_with_ports(
+            &mut cfg,
+            subnet.as_deref(),
+            has_flag(&args, "--add"),
+            use_mdns,
+            &extra_ports,
+        );
+    }
     0
 }
 
@@ -2178,7 +2199,7 @@ fn emit_catalog() -> i32 {
         cmd("proxy", "fy proxy start|stop|status [--port N] [--upstream URL]", "内置代理守护进程的直接管理", true),
         cmd("watch", "fy watch start|stop|status [--interval N]", "隧道保活：断线自动重连并重放所有转发/借网", true),
         cmd("net", "fy net <设备> [-c N] [--no-speed]", "网络体检：延迟/抖动/丢包、MTU、路由、DNS、出网、上下行实测带宽", true),
-        cmd("scan", "fy scan [--subnet CIDR] [--add] [--no-mdns]", "发现设备：mDNS + 网段扫描 + 指纹认领", true),
+        cmd("scan", "fy scan [--subnet CIDR] [--ports 2222,2200] [--add] [--no-mdns]", "发现设备：mDNS + 网段扫描 + 指纹认领", true),
         cmd("info", "fy info <设备>", "身份卡片：内核/架构/MAC/machine-id", true),
         cmd("hw", "fy hw <设备> [--out 目录] [--no-bundle] [--no-brief] [--include-identifiers] [--max-dt-nodes N] | fy hw brief <hardware.json> [--out peripherals.md]", "一次性采集硬件清单，或离线从 JSON 生成可读的 peripherals.md", true),
         cmd("plugin", "fy plugin ls|show|install|run", "本地可审阅功能插件：安装、预检、运行；内置 sysroot-sync 可同步交叉编译 sysroot", true),
@@ -2260,7 +2281,7 @@ fn print_help() {
   fy                         设备总览（并行探活 + 指纹身份）
   fy add <名> --ssh root@ip[:port] [--password P] [--legacy] [--serial /dev/x]
   fy add <名> --adb [serial] | --serial /dev/x --baud 1500000
-  fy scan [--subnet CIDR] [--add] [--no-mdns]   mDNS + 并发扫段 + 老朋友换IP自动认领
+  fy scan [--subnet CIDR] [--ports 2222,2200] [--add] [--no-mdns]   mDNS + 并发扫段 + 老朋友换IP自动认领
   fy sh [设备] [-- 命令]     进 shell / 跑一条命令（串口自动经黑匣子共享）
   fy info <设备>             身份卡片: 内核/架构/MAC/machine-id/实时状态
   fy hw <设备> [--out 目录]  一次性硬件快照: JSON/设备树 + 外设简报 peripherals.md
