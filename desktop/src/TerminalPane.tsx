@@ -31,20 +31,27 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       lineHeight: 1.35,
       scrollback: 8000,
       theme: {
-        background: "#0b1115",
-        foreground: "#d9e2e8",
-        cursor: "#7ee0c2",
-        selectionBackground: "#285b61",
-        black: "#0b1115",
-        brightBlack: "#71818b",
-        green: "#7ee0c2",
-        brightGreen: "#a4f2d7",
-        yellow: "#e8bd67",
-        brightYellow: "#f5d58d",
-        blue: "#79b8ff",
-        brightBlue: "#a8d3ff",
-        red: "#ef8a88",
-        brightRed: "#ffb4b2",
+        background: "#14110D",
+        foreground: "#E7E0D4",
+        cursor: "#D97757",
+        cursorAccent: "#14110D",
+        selectionBackground: "#3A2A20",
+        black: "#14110D",
+        brightBlack: "#6E6557",
+        red: "#DB7368",
+        brightRed: "#EC9384",
+        green: "#86B89E",
+        brightGreen: "#A6D2BC",
+        yellow: "#E0A961",
+        brightYellow: "#F0C88A",
+        blue: "#7FA6C9",
+        brightBlue: "#A6C6E0",
+        magenta: "#C79AC0",
+        brightMagenta: "#DDB6D6",
+        cyan: "#83BEB3",
+        brightCyan: "#A6D6CC",
+        white: "#CDC5B8",
+        brightWhite: "#EFE9DD",
       },
     });
     const fitAddon = new FitAddon();
@@ -56,7 +63,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       fitAddon.fit();
     }
     term.focus();
-    term.writeln(`\x1b[38;5;151mConnecting to ${deviceName}...\x1b[0m`);
+    term.writeln(`\x1b[38;5;180mConnecting to ${deviceName}...\x1b[0m`);
 
     const encoder = new TextEncoder();
     let socket: WebSocket | undefined;
@@ -96,11 +103,11 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
         const started = await startTerminal(deviceName, term.cols, term.rows, command);
         if (disposed) return;
         onStarted(tabId, started.sessionId);
-        term.writeln(`\x1b[38;5;110mConnected via ${started.transport.toUpperCase()}\x1b[0m\r\n`);
+        term.writeln(`\x1b[38;5;151mConnected via ${started.transport.toUpperCase()}\x1b[0m\r\n`);
         onActivity(`${deviceName}: terminal connected via ${started.transport.toUpperCase()}`);
 
         if (!desktopAvailable) {
-          term.writeln("\x1b[38;5;221mBrowser preview: terminal input is not sent to a device.\x1b[0m");
+          term.writeln("\x1b[38;5;222mBrowser preview: terminal input is not sent to a device.\x1b[0m");
           term.write("root@rk3588-lab:~# ");
           return;
         }
@@ -124,12 +131,12 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
         socket.onclose = () => {
           terminalReady = false;
           if (!disposed) {
-            term.writeln("\r\n\x1b[38;5;203mTerminal connection closed.\x1b[0m");
+            term.writeln("\r\n\x1b[38;5;173mTerminal connection closed.\x1b[0m");
             onActivity(`${deviceName}: terminal connection closed`);
           }
         };
       } catch (error) {
-        term.writeln(`\r\n\x1b[31mUnable to start terminal: ${String(error)}\x1b[0m`);
+        term.writeln(`\r\n\x1b[38;5;174mUnable to start terminal: ${String(error)}\x1b[0m`);
         onActivity(`${deviceName}: terminal start failed`);
       }
     };

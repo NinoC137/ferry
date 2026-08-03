@@ -161,13 +161,26 @@ fn pick_stable_id(stdout: &str) -> Option<String> {
 }
 
 /// 在给定的当前设备列表里，算出此刻真正对应这台档案设备的 adb serial。
-/// 顺序：① 档案里的 serial 仍在列表里就直接用；② 否则用稳定标识
-/// `adb_id` 逐台比对认领（换了 USB 口 serial 变了也能找回）；③ 档案没写死
-/// serial、且此刻只有一台设备时，认领它。
+/// 顺序：① 档案里的 serial 仍在列表里就直接用；①' 档案存的是 `usb:PATH`
+/// 选择器（无 USB 序列号描述符时常见）——`adb devices -l` 会把该路径印在描述
+/// 字段里，命中就回填**真实 serial**；② 否则用稳定标识 `adb_id` 逐台比对认领
+/// （换了 USB 口 serial 变了也能找回）；③ 档案没写死 serial、且此刻只有一台
+/// 设备时，认领它。
 fn live_serial_from(d: &Device, devs: &[(String, String)]) -> Option<String> {
-    if let Some(s) = &d.adb_serial {
-        if devs.iter().any(|(serial, _)| serial == s) {
-            return Some(s.clone());
+    if let Some(want) = d.adb_serial.as_deref() {
+        if devs.iter().any(|(serial, _)| serial == want) {
+            return Some(want.to_string());
+        }
+        // ①' `usb:2-1.2` 这类拓扑路径是合法的 `adb -s` 选择器，但不是 adb
+        // 上报的 serial（serial 另在描述里）。按整段字段比对，回填真实 serial，
+        // 让后续操作与认领统一走稳定 serial。
+        if want.starts_with("usb:") {
+            if let Some((serial, _)) = devs
+                .iter()
+                .find(|(_, desc)| desc.split_whitespace().any(|f| f == want))
+            {
+                return Some(serial.clone());
+            }
         }
     }
     if let Some(id) = &d.adb_id {
@@ -186,10 +199,21 @@ fn live_serial_from(d: &Device, devs: &[(String, String)]) -> Option<String> {
     None
 }
 
+/// `adb_serial` 是不是稳定网络端点（`ip:port`，如 `192.168.1.37:5555`）。
+/// 关键要把 `usb:2-1.2` 这类 USB 拓扑路径排除：它也带冒号，但换口就变，绝不是
+/// 网络端点。早先用 `contains(':')` 判断，会把 usb 路径误当成网络 adb，于是既
+/// 不换口认领、也不采集稳定标识——正是"红灯 + 不进标识模式"的根因之一。
+fn is_network_endpoint(s: &str) -> bool {
+    !s.starts_with("usb:")
+        && s.rsplit_once(':').is_some_and(|(host, port)| {
+            !host.is_empty() && !port.is_empty() && port.chars().all(|c| c.is_ascii_digit())
+        })
+}
+
 /// 此刻应当传给 `adb -s` 的 serial。网络地址（ip:port）原样返回、不去比对。
 pub fn live_serial(d: &Device) -> Option<String> {
     // ip:port 形态本身就是稳定端点，不受 USB 口影响。
-    if d.adb_serial.as_deref().is_some_and(|s| s.contains(':')) {
+    if d.adb_serial.as_deref().is_some_and(is_network_endpoint) {
         return d.adb_serial.clone();
     }
     live_serial_from(d, &list_devices())
@@ -217,8 +241,8 @@ pub fn sync_profile(cfg: &mut Config, name: &str) {
         Some(d) if d.transport == Transport::Adb => d.clone(),
         _ => return,
     };
-    // 网络 adb（ip:port）不涉及 USB 口漂移，跳过。
-    if d.adb_serial.as_deref().is_some_and(|s| s.contains(':')) {
+    // 网络 adb（ip:port）不涉及 USB 口漂移，跳过。usb:PATH 不是网络端点，要继续。
+    if d.adb_serial.as_deref().is_some_and(is_network_endpoint) {
         return;
     }
     let live = match live_serial_from(&d, &list_devices()) {
@@ -417,5 +441,39 @@ mod tests {
         let d = adb_dev(Some("GONE"), None);
         let devs = vec![("OTHER".to_string(), "device".to_string())];
         assert_eq!(live_serial_from(&d, &devs), None);
+    }
+
+    #[test]
+    fn live_serial_from_resolves_usb_path_to_real_serial() {
+        // 档案存 `usb:2-1.2` 选择器；adb 上报的是真实 serial，usb 路径只在描述里。
+        // 应按描述字段命中，回填真实 serial（这正是 rk3576 红灯的根因修复）。
+        let d = adb_dev(Some("usb:2-1.2"), None);
+        let devs = vec![(
+            "ed7cce1d1ca7b73c".to_string(),
+            "device usb:2-1.2 product:occam model:Nexus_4 transport_id:5".to_string(),
+        )];
+        assert_eq!(
+            live_serial_from(&d, &devs).as_deref(),
+            Some("ed7cce1d1ca7b73c")
+        );
+        // 描述里没有该 usb 路径 → 不瞎认。
+        let other = vec![(
+            "ed7cce1d1ca7b73c".to_string(),
+            "device usb:9-9 product:occam".to_string(),
+        )];
+        assert_eq!(live_serial_from(&d, &other), None);
+    }
+
+    #[test]
+    fn is_network_endpoint_excludes_usb_paths() {
+        assert!(is_network_endpoint("192.168.1.37:5555"));
+        assert!(is_network_endpoint("localhost:22"));
+        // usb 拓扑路径带冒号但绝不是网络端点——早先 contains(':') 的误判点。
+        assert!(!is_network_endpoint("usb:2-1.2"));
+        assert!(!is_network_endpoint("usb:3-1.2.4"));
+        // 裸 serial、非数字端口、缺端口都不算。
+        assert!(!is_network_endpoint("ed7cce1d1ca7b73c"));
+        assert!(!is_network_endpoint("host:notaport"));
+        assert!(!is_network_endpoint("192.168.1.37:"));
     }
 }
