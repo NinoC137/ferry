@@ -83,6 +83,11 @@ fn handle_terminal(req: Request, stream: TcpStream) -> std::io::Result<()> {
     };
     let pty = Arc::new(Mutex::new(pty));
 
+    // The WebSocket handshake completes before PTY creation. Mark the exact
+    // point at which a writer exists so startup keystrokes can be queued by
+    // the browser and released without a readiness race.
+    wsutil::ws_write_text(&mut ws, r#"{"t":"terminal-ready"}"#)?;
+
     // 写向客户端的一端加锁共享（PTY→WS 线程 与 pong 都要用）
     let ws_out = Arc::new(Mutex::new(ws.try_clone()?));
 
@@ -409,9 +414,15 @@ mod tests {
             "Accept 键应匹配"
         );
 
-        // 发一条命令（客户端帧必须 mask）
-        std::thread::sleep(Duration::from_millis(400));
-        ws_send_masked(&mut s, 0x2, b"echo GUI_OK_$((3*3))\r");
+        // PTY 就绪是输入队列的释放边界。随后用逐字节高频帧发送，覆盖
+        // 实际键盘事件的最坏情况，并验证顺序与内容都不丢。
+        assert!(
+            ws_wait_for(&mut r, "terminal-ready", 5),
+            "服务端应在 PTY writer 可用后明确标记 ready"
+        );
+        for byte in b"echo GUI_OK_$((3*3))\r" {
+            ws_send_masked(&mut s, 0x2, &[*byte]);
+        }
         assert!(ws_wait_for(&mut r, "GUI_OK_9", 6), "终端应回显命令结果");
 
         // resize → stty size 反映 24x90

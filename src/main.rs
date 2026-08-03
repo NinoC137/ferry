@@ -17,10 +17,10 @@ mod logs;
 mod mdns;
 mod netdiag;
 mod peripheral_brief;
-mod proxyd;
-mod pty;
 #[allow(dead_code)]
 mod plugins;
+mod proxyd;
+mod pty;
 mod runx;
 mod scan;
 mod serialx;
@@ -953,6 +953,7 @@ fn cmd_add(args: Vec<String>) -> i32 {
     }
     let summary = format!("[{}] {}", d.transport.as_str(), d.endpoint());
     let has_pw = d.password.is_some();
+    let is_adb = d.transport == Transport::Adb;
     cfg.devices.insert(name.clone(), d);
     if let Err(e) = cfg.save() {
         return fail(code::CONFIG, &format!("保存失败: {}", e));
@@ -963,6 +964,11 @@ fn cmd_add(args: Vec<String>) -> i32 {
             "密码明文存在 devices.toml (0600)。跑一次 fy keyup {} 就能转免密。",
             name
         ));
+    }
+    // 设备此刻多半连着：采集换 USB 口不变的稳定标识（adb_id）并校正在线 serial，
+    // 让以后换口也能靠 adb_id 认回同一台。离线 / 网络 adb 会在内部安全跳过。
+    if is_adb {
+        adbx::sync_profile(&mut cfg, &name);
     }
     let saved = Config::load();
     match saved.devices.get(&name) {
@@ -1629,7 +1635,10 @@ fn cmd_plugin(args: Vec<String>) -> i32 {
                 );
             };
             if jsonout::json_mode() {
-                return fail(code::USAGE, "plugin installation writes local files and is not available with --json");
+                return fail(
+                    code::USAGE,
+                    "plugin installation writes local files and is not available with --json",
+                );
             }
             let force = has_flag(&args, "--force");
             let installed = if plugins::builtin_ids().contains(&source.as_str()) {
@@ -1648,7 +1657,10 @@ fn cmd_plugin(args: Vec<String>) -> i32 {
         }
         "run" => {
             if jsonout::json_mode() {
-                return fail(code::USAGE, "plugin run streams plugin output and is not available with --json");
+                return fail(
+                    code::USAGE,
+                    "plugin run streams plugin output and is not available with --json",
+                );
             }
             let (Some(id), Some(device_name)) = (args.get(1), args.get(2)) else {
                 return fail_hint(
@@ -1681,8 +1693,14 @@ fn cmd_plugin(args: Vec<String>) -> i32 {
             }
             match plugins::run_inherit_plugin(&plugin, &device, &plugin_args) {
                 Ok(0) => 0,
-                Ok(status) => fail(code::FAIL, &format!("plugin '{}' exited with status {status}", plugin.id)),
-                Err(error) => fail(code::FAIL, &format!("plugin '{}' failed: {error}", plugin.id)),
+                Ok(status) => fail(
+                    code::FAIL,
+                    &format!("plugin '{}' exited with status {status}", plugin.id),
+                ),
+                Err(error) => fail(
+                    code::FAIL,
+                    &format!("plugin '{}' failed: {error}", plugin.id),
+                ),
             }
         }
         "help" | "-h" | "--help" => {
@@ -1691,11 +1709,17 @@ fn cmd_plugin(args: Vec<String>) -> i32 {
             println!("fy plugin install <builtin-id|local-plugin-directory> [--force]");
             println!("fy plugin run <plugin-id> <device> [-- plugin arguments]");
             println!();
-            println!("Plugins are local, reviewable packages. {}.", plugins::source_hint());
+            println!(
+                "Plugins are local, reviewable packages. {}.",
+                plugins::source_hint()
+            );
             println!("The built-in sysroot-sync plugin mirrors /lib, /usr/lib and /usr/include over SSH.");
             0
         }
-        other => fail(code::USAGE, &format!("fy plugin supports ls, show, install, run; not '{other}'")),
+        other => fail(
+            code::USAGE,
+            &format!("fy plugin supports ls, show, install, run; not '{other}'"),
+        ),
     }
 }
 

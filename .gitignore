@@ -1,5 +1,8 @@
 /target
 Cargo.lock
+MEMORY.md
+memory/*
+.learnings/*
 
 # Device-local connectivity snapshot produced during diagnostics
 /desktop/connectivity-before.txt

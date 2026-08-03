@@ -43,7 +43,8 @@ pub struct Device {
     pub key: Option<String>,
     pub legacy: bool, // 老 dropbear/旧算法兼容
     // adb
-    pub adb_serial: Option<String>, // adb -s 目标（USB 序列号或 ip:port）
+    pub adb_serial: Option<String>, // adb -s 目标（USB 序列号或 ip:port），换 USB 口可能变
+    pub adb_id: Option<String>,     // 设备内部稳定标识（ro.serialno / machine-id …），换口不变
     // serial
     pub dev: Option<String>, // /dev/cu.* 或 /dev/ttyUSB*
     pub baud: u32,
@@ -64,6 +65,7 @@ impl Device {
             key: None,
             legacy: false,
             adb_serial: None,
+            adb_id: None,
             dev: None,
             baud: 115200,
             dest: "/tmp".into(),
@@ -128,6 +130,7 @@ impl Config {
             d.key = gs("key");
             d.legacy = gb("legacy").unwrap_or(false);
             d.adb_serial = gs("adb_serial");
+            d.adb_id = gs("adb_id");
             d.dev = gs("dev");
             if let Some(v) = gi("baud") {
                 d.baud = v as u32;
@@ -173,6 +176,9 @@ impl Config {
                 Transport::Adb => {
                     if let Some(s) = &d.adb_serial {
                         self.doc.set(&t, "adb_serial", Val::S(s.clone()));
+                    }
+                    if let Some(id) = &d.adb_id {
+                        self.doc.set(&t, "adb_id", Val::S(id.clone()));
                     }
                 }
                 Transport::Serial => {}

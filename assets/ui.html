@@ -210,20 +210,34 @@ term.open(document.getElementById('term'));
 setTimeout(()=>fit.fit(), 30);
 
 let ws=null, wsReady=false, enc=new TextEncoder();
+const pendingInput=[];
 function wsUrl(){ return `ws://${location.host}/pty?rows=${term.rows}&cols=${term.cols}`; }
+function flushInput(){
+  if(!wsReady || !ws || ws.readyState!==WebSocket.OPEN) return;
+  while(pendingInput.length){
+    try{ ws.send(pendingInput[0]); pendingInput.shift(); }
+    catch(e){ return; }
+  }
+}
+function queueInput(data){ pendingInput.push(enc.encode(data)); flushInput(); }
 function connect(){
-  ws = new WebSocket(wsUrl());
-  ws.binaryType='arraybuffer';
-  ws.onopen=()=>{ wsReady=true; setDot(true); sendResize(); };
-  ws.onclose=()=>{ wsReady=false; setDot(false); };
-  ws.onerror=()=>{ setDot(false); };
-  ws.onmessage=e=>{
-    if(typeof e.data==='string') term.write(e.data);
+  const socket = new WebSocket(wsUrl());
+  ws = socket;
+  socket.binaryType='arraybuffer';
+  socket.onopen=()=>{ if(ws===socket) sendResize(); };
+  socket.onclose=()=>{ if(ws===socket){ wsReady=false; setDot(false); } };
+  socket.onerror=()=>{ if(ws===socket) setDot(false); };
+  socket.onmessage=e=>{
+    if(ws!==socket) return;
+    if(e.data==='{\"t\":\"terminal-ready\"}'){
+      wsReady=true; setDot(true); sendResize(); flushInput(); term.focus();
+    }
+    else if(typeof e.data==='string') term.write(e.data);
     else term.write(new Uint8Array(e.data));
   };
 }
-term.onData(d=>{ if(wsReady) ws.send(enc.encode(d)); });
-function sendResize(){ if(wsReady) ws.send(JSON.stringify({t:'resize',rows:term.rows,cols:term.cols})); }
+term.onData(queueInput);
+function sendResize(){ if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({t:'resize',rows:term.rows,cols:term.cols})); }
 function setDot(on){ const d=document.getElementById('wsdot'); d.className='wsdot '+(on?'on':'off'); }
 window.addEventListener('resize',()=>{ fit.fit(); sendResize(); });
 new ResizeObserver(()=>{ try{fit.fit(); sendResize();}catch(e){} }).observe(document.getElementById('termwrap'));
@@ -234,9 +248,12 @@ connect();
 
 // ---------------- 侧栏动作：注入命令到终端 ----------------
 function run(cmd){
-  if(!wsReady){ toast('终端未连接，正在重连'); reconnect(); return; }
   term.focus();
-  ws.send(enc.encode(cmd+'\r'));       // \r = 回车执行
+  queueInput(cmd+'\r');                // \r = 回车执行
+  if(!wsReady){
+    toast('终端未就绪，命令已排队');
+    if(!ws || ws.readyState>=WebSocket.CLOSING) reconnect();
+  }
 }
 function runCmd(){
   const el=document.getElementById('cmd'); const v=el.value.trim();
