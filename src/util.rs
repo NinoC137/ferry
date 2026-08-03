@@ -224,6 +224,91 @@ pub fn run_capture(argv: &[String], envs: &[(String, String)]) -> io::Result<Out
     })
 }
 
+/// 与 `run_capture` 相同，但带墙钟超时保护：子进程超时即被杀掉，返回
+/// status=-1 的空输出。用于 adb 这类可能永久卡住的外部命令，保证桌面端
+/// 不会在一次探测上无限期挂起。
+///
+/// 注意：调用方若担心命令会 fork 出继承管道的常驻守护进程（典型：adb
+/// server），应先把该守护进程用 null stdio 显式拉起来，否则即便本命令
+/// 正常退出，读线程也可能被守护进程持有的管道写端挡住。见
+/// `adbx::ensure_server`。
+pub fn run_capture_timeout(
+    argv: &[String],
+    envs: &[(String, String)],
+    timeout: std::time::Duration,
+) -> io::Result<Output> {
+    use std::io::Read;
+    announce(argv);
+    if dry() {
+        return Ok(Output {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    }
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]);
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // stdout / stderr 各交给一个线程读到底，避免管道写满时子进程与我们
+    // 互相死等。
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    let out_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(pipe) = out_pipe.as_mut() {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let err_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(pipe) = err_pipe.as_mut() {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                let stdout = out_thread.join().unwrap_or_default();
+                let stderr = err_thread.join().unwrap_or_default();
+                return Ok(Output {
+                    status: status.code().unwrap_or(-1),
+                    stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                    stderr: String::from_utf8_lossy(&stderr).into_owned(),
+                });
+            }
+            None => {
+                if start.elapsed() >= timeout {
+                    // 超时：杀掉子进程。读线程可能仍被某个继承了管道的后台
+                    // 守护进程挡住，故不 join，任其随管道关闭自行退出，避免
+                    // 我们再次被拖住。
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(Output {
+                        status: -1,
+                        stdout: String::new(),
+                        stderr: format!(
+                            "[ferry] 命令超时（{:.1}s）已被终止：{}",
+                            timeout.as_secs_f32(),
+                            render_cmd(argv)
+                        ),
+                    });
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+        }
+    }
+}
+
 /// 运行，stdio 直通终端（交互/流式输出）。返回退出码。
 pub fn run_inherit(argv: &[String], envs: &[(String, String)]) -> io::Result<i32> {
     announce(argv);

@@ -201,6 +201,9 @@ pub fn collect(cfg: &Config) -> Vec<FwdView> {
             added: f.added,
         });
     }
+    // 先确保 adb server 已在跑，否则 `adb forward --list` 首次运行会 fork
+    // 守护进程并挂住我们的捕获管道（与 scan 的卡死同因）。
+    adbx::ensure_server();
     for (kind, args) in [
         ("forward", ["forward", "--list"]),
         ("reverse", ["reverse", "--list"]),

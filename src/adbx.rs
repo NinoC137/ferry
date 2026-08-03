@@ -28,6 +28,9 @@ pub fn exec_inherit(d: &Device, cmd: &str, tty: bool) -> std::io::Result<i32> {
 }
 
 pub fn exec_capture(d: &Device, cmd: &str) -> std::io::Result<Output> {
+    // 同 list_devices：先确保 server 已在跑，避免 adb 首次运行 fork 守护
+    // 进程后继承并挂住我们的捕获管道。
+    ensure_server();
     run_capture(&adb_argv(d, &["shell", cmd]), &[])
 }
 
@@ -47,9 +50,34 @@ pub fn pull(d: &Device, remote: &str, local: &Path) -> std::io::Result<bool> {
     Ok(st == 0)
 }
 
+/// 预启动 adb 服务端，并把它的 stdio 全部接到 /dev/null。
+///
+/// 关键：`adb devices` 在服务端未运行时会 fork 出一个常驻 server 守护进程。
+/// 若此刻我们用 `Command::output()`（管道）去捕获，守护进程会继承并**终身
+/// 持有**这对 stdout/stderr 管道写端，导致 `output()` 永远等不到 EOF——桌面
+/// 端首次扫描"走到 adb 这一步就卡死"正是此因（CLI 下终端里 server 往往已在
+/// 跑，故不复现）。先用 null stdio 显式把 server 拉起来，之后的 `adb devices`
+/// 便只是连接既有 server、立即返回，既不再 fork，也不再挂住我们的管道。
+pub fn ensure_server() {
+    if dry() {
+        return;
+    }
+    let _ = std::process::Command::new("adb")
+        .arg("start-server")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 /// `adb devices -l` 解析：Vec<(serial, 描述)>。
 pub fn list_devices() -> Vec<(String, String)> {
-    let out = match run_capture(&argv(&["adb", "devices", "-l"]), &[]) {
+    ensure_server();
+    let out = match run_capture_timeout(
+        &argv(&["adb", "devices", "-l"]),
+        &[],
+        std::time::Duration::from_secs(8),
+    ) {
         Ok(o) => o,
         Err(_) => return vec![],
     };

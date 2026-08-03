@@ -209,7 +209,7 @@ fn validate_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_devices() -> Vec<DeviceSummary> {
     let cfg = Config::load();
     let devices: Vec<Device> = cfg.devices.values().cloned().collect();
@@ -235,7 +235,7 @@ fn list_devices() -> Vec<DeviceSummary> {
     handles.into_iter().filter_map(|handle| handle.join().ok()).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_device(name: String) -> Result<DeviceForm, String> {
     Config::load()
         .find(&name)
@@ -243,7 +243,7 @@ fn get_device(name: String) -> Result<DeviceForm, String> {
         .ok_or_else(|| format!("Unknown device '{name}'."))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_device(form: DeviceForm) -> Result<DeviceForm, String> {
     validate_name(&form.name)?;
     let transport = Transport::parse(&form.transport).ok_or("Unknown transport.")?;
@@ -278,7 +278,7 @@ fn save_device(form: DeviceForm) -> Result<DeviceForm, String> {
     Ok(to_form(&d))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_device(name: String) -> Result<OperationResult, String> {
     let mut cfg = Config::load();
     if cfg.devices.remove(&name).is_none() {
@@ -292,7 +292,7 @@ fn remove_device(name: String) -> Result<OperationResult, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn check_connection(name: String) -> Result<ProbeResult, String> {
     let d = Config::load()
         .find(&name)
@@ -300,7 +300,7 @@ fn check_connection(name: String) -> Result<ProbeResult, String> {
     Ok(probe_device(&d))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn setup_ssh_key(request: SetupSshKeyRequest) -> Result<OperationResult, String> {
     let device = Config::load()
         .find(&request.name)
@@ -352,13 +352,13 @@ fn desktop_plugin_device(name: &str) -> Result<Device, String> {
         .ok_or_else(|| format!("Unknown device '{name}'."))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_plugins() -> Result<Vec<PluginView>, String> {
     ferry::plugins::list()
         .map(|plugins| plugins.iter().map(plugin_view).collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn install_plugin(request: PluginInstallRequest) -> Result<PluginView, String> {
     let source = request.source.trim();
     if source.is_empty() {
@@ -372,7 +372,7 @@ fn install_plugin(request: PluginInstallRequest) -> Result<PluginView, String> {
     Ok(plugin_view(&plugin))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn plugin_preview(request: PluginRunRequest) -> Result<PluginPlan, String> {
     let plugin = ferry::plugins::load(&request.id)?;
     let device = desktop_plugin_device(&request.name)?;
@@ -381,7 +381,7 @@ fn plugin_preview(request: PluginRunRequest) -> Result<PluginPlan, String> {
     Ok(PluginPlan { id: plugin.id, device: device.name, risk: plugin.risk, steps, command })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn run_plugin(request: PluginRunRequest) -> Result<PluginRunResult, String> {
     let plugin = ferry::plugins::load(&request.id)?;
     let device = desktop_plugin_device(&request.name)?;
@@ -399,7 +399,7 @@ fn run_plugin(request: PluginRunRequest) -> Result<PluginRunResult, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn discover_local_devices() -> Vec<DeviceCandidate> {
     let mut candidates = Vec::new();
     for (serial, detail) in ferry::adbx::list_devices() {
@@ -411,7 +411,7 @@ fn discover_local_devices() -> Vec<DeviceCandidate> {
     candidates
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn scan_network(request: ScanRequest) -> Result<Vec<ScanHit>, String> {
     let cfg = Config::load();
     let subnet = (!request.subnet.trim().is_empty()).then_some(request.subnet.trim());
@@ -424,7 +424,7 @@ fn scan_network(request: ScanRequest) -> Result<Vec<ScanHit>, String> {
     }).collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn transfer(request: TransferRequest) -> Result<OperationResult, String> {
     let device = Config::load().find(&request.name).ok_or_else(|| format!("Unknown device '{}'.", request.name))?;
     let opts = ferry::xfer::XferOpts { force: request.force, resume: request.resume, verify: request.verify, skip_same: true };
@@ -438,14 +438,14 @@ fn transfer(request: TransferRequest) -> Result<OperationResult, String> {
     Ok(OperationResult { ok: true, detail: format!("{} file(s), {} bytes transferred, {} unchanged", files.len(), sent, skipped) })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_forwards() -> Vec<ForwardView> {
     ferry::fwd::collect(&Config::load()).into_iter().map(|entry| ForwardView {
         id: entry.id, device: entry.dev, channel: entry.channel, detail: entry.human, alive: entry.alive,
     }).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_forward(name: String, spec: String) -> Result<OperationResult, String> {
     let cfg = Config::load();
     let device = cfg.find(&name).ok_or_else(|| format!("Unknown device '{name}'."))?;
@@ -453,13 +453,13 @@ fn add_forward(name: String, spec: String) -> Result<OperationResult, String> {
     Ok(OperationResult { ok: true, detail: format!("Forward {} created.", if id.is_empty() { spec } else { id }) })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_forward(id: String) -> OperationResult {
     ferry::fwd::remove(&Config::load(), &id);
     OperationResult { ok: true, detail: format!("Forward {id} removed.") }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn top_snapshot() -> Vec<TopRow> {
     let cfg = Config::load();
     cfg.devices.values().filter(|device| device.transport != Transport::Serial).map(|device| {
@@ -471,20 +471,20 @@ fn top_snapshot() -> Vec<TopRow> {
     }).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn blackboxes() -> Vec<BlackboxView> {
     Config::load().devices.values().filter(|device| device.transport == Transport::Serial).map(|device| BlackboxView {
         name: device.name.clone(), running: ferry::blackbox::running_for(&device.name), incidents: std::fs::read_dir(ferry::blackbox::incidents_dir(&device.name)).map(|entries| entries.count()).unwrap_or(0), log_path: ferry::blackbox::log_path(&device.name).display().to_string(),
     }).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_blackbox(name: String, enabled: bool) -> Result<OperationResult, String> {
     if enabled { ferry::blackbox::start(&Config::load(), &name)?; } else { ferry::blackbox::stop(&name); }
     Ok(OperationResult { ok: true, detail: format!("Black box for {name} {}.", if enabled { "started" } else { "stopped" }) })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn blackbox_blame(name: String, lines: usize) -> Result<String, String> {
     let mut incidents: Vec<_> = std::fs::read_dir(ferry::blackbox::incidents_dir(&name)).map_err(|e| e.to_string())?.flatten().map(|entry| entry.path()).collect();
     incidents.sort();
@@ -493,7 +493,7 @@ fn blackbox_blame(name: String, lines: usize) -> Result<String, String> {
     Ok(log.lines().rev().take(lines.max(1)).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn workflow_preview(kind: String, device: String, nat: bool, persist: bool, boot_ok: bool, mode: String) -> Result<WorkflowPlan, String> {
     let current = Config::load().find(&device).ok_or_else(|| format!("Unknown device '{device}'."))?;
     let probe = probe_device(&current);
@@ -508,7 +508,7 @@ fn workflow_preview(kind: String, device: String, nat: bool, persist: bool, boot
     Ok(WorkflowPlan { kind, device, preflight_ok: probe.online || current.transport == Transport::Serial, preflight: probe.detail, steps, rollback })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn workflow_execute(request: WorkflowRequest) -> Result<OperationResult, String> {
     if !request.confirmed { return Err("Execution requires an explicit confirmation after reviewing the plan.".into()); }
     let mut cfg = Config::load();
@@ -541,7 +541,7 @@ fn session_token(sequence: u64) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn start_terminal(name: String, cols: u16, rows: u16, command: Option<String>) -> Result<TerminalStarted, String> {
     let device = Config::load()
         .find(&name)

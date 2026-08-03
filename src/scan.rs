@@ -128,6 +128,14 @@ pub fn local_nets() -> Vec<(String, u8)> {
             for line in o.stdout.lines() {
                 let t = line.trim();
                 if t.starts_with("inet ") && !t.contains("127.0.0.1") {
+                    // 点对点接口（VPN/utun/代理隧道/ppp，ifconfig 记作 `inet A --> B`）没有
+                    // 可扫的局域网：对端只有 B 一个地址。把它当 /24 铺开会把上百个探测包灌进
+                    // 隧道，而隧道对 connect_timeout 往往不兜底（典型如国内代理的
+                    // 198.18.0.0/15 fake-ip 段，每个 connect 被挂住数秒），整轮扫描因此永不
+                    // 结束。要扫隧道对端就显式 `fy scan --subnet <cidr>`。
+                    if t.contains("-->") {
+                        continue;
+                    }
                     let toks: Vec<&str> = t.split_whitespace().collect();
                     if toks.len() >= 4 {
                         let ip = toks[1].to_string();
@@ -234,15 +242,14 @@ fn build_targets(subnet_override: Option<&str>) -> Vec<String> {
     } else {
         for (ip, bits) in local_nets() {
             if bits >= 31 {
-                continue;
+                continue; // /31 /32：没有可枚举的主机位
             }
-            let base: Vec<&str> = ip.split('.').collect();
-            if base.len() != 4 {
-                continue;
-            }
-            let prefix = format!("{}.{}.{}.", base[0], base[1], base[2]);
-            for h in 1..255 {
-                let t = format!("{}{}", prefix, h);
+            // 尊重真实前缀，但整体夹在 /24 以内：大于一个 /24 的网段（如 /22）只扫本机 IP
+            // 所在的那个 /24，避免上千个探测；/25~/30 则只扫其真实子网，不再无脑铺成 /24
+            // （此前会把一个 /30 点对点/隧道网段放大成 253 个目标）。复用 expand_cidr，与
+            // --subnet 路径共用同一套主机枚举（掩码取网络基址、去掉网络/广播位）。
+            let eff_bits = bits.max(24);
+            for t in expand_cidr(&format!("{}/{}", ip, eff_bits)) {
                 if t != ip {
                     targets.push(t);
                 }
@@ -280,6 +287,11 @@ fn probe_ports(
     let hot: Arc<BTreeMap<String, String>> = Arc::new(hot.clone());
 
     let n = WORKERS.min(tasks.len().max(1));
+    // 兜底总时限：真实局域网扫描几秒即结束、远够不到；但万一目标极多（如 --subnet /16）
+    // 或某接口的 connect_timeout 不兜底，也保证整轮探测能自己收尾、不无限拖住调用方
+    // （桌面端/CLI 都要求扫描"会自动结束"）。软上限：只拦"尚未领取"的任务，不会打断已在
+    // connect 里的连接——治本仍靠 build_targets 不把隧道网段喂进来。
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut handles = vec![];
     for _ in 0..n {
         let tasks = tasks.clone();
@@ -287,6 +299,9 @@ fn probe_ports(
         let found = found.clone();
         let hot = hot.clone();
         handles.push(std::thread::spawn(move || loop {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
             let i = cursor.fetch_add(1, Ordering::Relaxed);
             if i >= tasks.len() {
                 break;
