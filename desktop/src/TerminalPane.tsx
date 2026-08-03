@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { desktopAvailable, startTerminal } from "./bridge";
+import { TerminalInputQueue, forwardDroppedInput } from "./terminalInput";
 
 interface TerminalPaneProps {
   tabId: string;
@@ -62,27 +63,21 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     let resizeObserver: ResizeObserver | undefined;
     let disposed = false;
     let terminalReady = false;
-    let pendingInput = "";
-    let inputTimer: ReturnType<typeof setTimeout> | undefined;
+    const inputQueue = new TerminalInputQueue(encoder);
 
     const flushInput = () => {
-      inputTimer = undefined;
-      if (!terminalReady || socket?.readyState !== WebSocket.OPEN || !pendingInput) return;
-      const data = pendingInput;
-      pendingInput = "";
-      socket.send(encoder.encode(data));
+      const openSocket = socket;
+      if (!terminalReady || openSocket?.readyState !== WebSocket.OPEN) return;
+      try {
+        inputQueue.flush((bytes) => openSocket.send(bytes));
+      } catch {
+        // OPEN can change between the readyState check and send(). The queue
+        // retains the failed item so no key press silently disappears.
+      }
     };
     const queueInput = (data: string) => {
-      pendingInput += data;
-      // Terminal control bytes cannot wait behind the small typing coalescer:
-      // this keeps Tab completion, Enter, Ctrl-C, Escape and other controls native.
-      const isControl = Array.from(data).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
-      if (isControl) {
-        if (inputTimer) clearTimeout(inputTimer);
-        flushInput();
-      } else if (!inputTimer) {
-        inputTimer = setTimeout(flushInput, 8);
-      }
+      inputQueue.enqueue(data);
+      flushInput();
     };
 
     const sendResize = () => {
@@ -140,8 +135,8 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     };
     void start();
 
-    // Coalesce ordinary typing for a few milliseconds. A rapid "pwd" becomes
-    // one ordered frame, while every terminal control byte flushes immediately.
+    // Every xterm input event enters the FIFO before any send is attempted.
+    // This covers ordinary keys, paste, completion and terminal control bytes.
     const dataDisposable = term.onData((data) => {
       if (!desktopAvailable) {
         term.write(data);
@@ -149,6 +144,18 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       }
       queueInput(data);
     });
+
+    // Safety net for macOS WKWebView: it intermittently routes fast keystrokes
+    // through the marked-text/insertText path (keydown keyCode 229), after which
+    // xterm 6.x drops the character before onData (see forwardDroppedInput). We
+    // claim the earlier `beforeinput` event and feed the byte into the same FIFO;
+    // preventDefault stops xterm's own `input` handler from double-sending.
+    const textarea = term.textarea;
+    const onBeforeInput = (event: InputEvent) => {
+      if (!desktopAvailable) return;
+      forwardDroppedInput(event, queueInput);
+    };
+    textarea?.addEventListener("beforeinput", onBeforeInput, true);
 
     if (host.current) {
       resizeObserver = new ResizeObserver(() => {
@@ -160,8 +167,8 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
     return () => {
       disposed = true;
       dataDisposable.dispose();
+      textarea?.removeEventListener("beforeinput", onBeforeInput, true);
       resizeObserver?.disconnect();
-      if (inputTimer) clearTimeout(inputTimer);
       socket?.close();
       syncSize.current = () => {};
       term.dispose();
