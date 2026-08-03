@@ -543,9 +543,23 @@ fn session_token(sequence: u64) -> String {
 
 #[tauri::command(async)]
 fn start_terminal(name: String, cols: u16, rows: u16, command: Option<String>) -> Result<TerminalStarted, String> {
-    let device = Config::load()
+    let mut cfg = Config::load();
+    // 先解析出规范设备名（find 支持前缀匹配），后续都用精确 key。
+    let canonical = cfg
         .find(&name)
-        .ok_or_else(|| format!("Unknown device '{name}'."))?;
+        .ok_or_else(|| format!("Unknown device '{name}'."))?
+        .name;
+    // 连接即锚定：采集稳定标识 adb_id，并把 usb:PATH 选择器规整为真实 serial
+    // （仅对 adb 生效；非 adb 或已锚定时是近乎零成本的空跑）。第一次从桌面端连上，
+    // 这台设备就进入"标识符模式"，之后换任何 USB 口也能靠 adb_id 自动认回。
+    ferry::adbx::sync_profile(&mut cfg, &canonical);
+    // 用规整/认领后的稳定 serial 去连接，换口也命中同一台。
+    let device = ferry::adbx::resolved(
+        &cfg.devices
+            .get(&canonical)
+            .cloned()
+            .ok_or_else(|| format!("Unknown device '{name}'."))?,
+    );
     let sequence = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
     let session_id = format!("{}-{}", device.name, sequence);
     let token = session_token(sequence);
