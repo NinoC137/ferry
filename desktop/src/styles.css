@@ -12,6 +12,7 @@
   --surface-2: #28231C;   /* raised cards, inputs-on-surface */
   --surface-3: #302A21;   /* hovers, active chips */
   --raised:    #2B251D;
+  --field-bg:  #17130E;   /* form control wells */
 
   /* Warm hairlines */
   --border:        #342E25;
@@ -44,6 +45,10 @@
   --danger-ink:  #F6DAD3;
   --danger-bg:   #2E1A15;
   --danger-line: #6B3A31;
+  --danger-bg-hover:     #3A211B;
+  --danger-strong:       #6A322B;
+  --danger-strong-hover: #7E3B33;
+  --danger-strong-ink:   #F6DAD3;
   --warn:        #E0A961;
   --warn-bg:     #2A2013;
   --warn-line:   #5C4A2C;
@@ -65,6 +70,9 @@
   --shadow:    0 12px 34px rgba(0, 0, 0, .42);
   --shadow-lg: 0 30px 72px rgba(0, 0, 0, .58);
 
+  --scrollbar:       #3C352B;
+  --scrollbar-hover: #4E4638;
+
   color-scheme: dark;
   font-family: var(--font-ui);
   color: var(--ink);
@@ -74,15 +82,79 @@
   text-rendering: optimizeLegibility;
 }
 
+/* ============================================================================
+   Light theme — warm paper: a cream desk, cards lifted in ivory, a deeper clay
+   that carries on light. Same token names, so every rule below adapts unchanged.
+   ========================================================================== */
+:root[data-theme="light"] {
+  --term-bg:   #ECE5D6;   /* terminal paper + code wells */
+  --bg:        #EDE8DC;   /* app + workspace ground (the desk) */
+  --surface:   #F7F3EB;   /* sidebar, panels, cards — lifted off the desk */
+  --surface-2: #EFEADF;   /* raised cards, inputs-on-surface */
+  --surface-3: #E6DFD0;   /* hovers, active chips */
+  --raised:    #FBF8F1;
+  --field-bg:  #FCFAF4;
+
+  --border:        #DCD4C2;
+  --border-strong: #C7BCA5;
+  --border-faint:  #E6DFD0;
+
+  --ink:    #2B261D;
+  --ink-2:  #49412F;
+  --muted:  #6F6552;
+  --faint:  #8A7F66;
+  --dim:    #A3967C;
+
+  --accent:       #C15F3E;   /* deeper clay so it carries on paper */
+  --accent-hover: #A94F31;
+  --accent-press: #8F4127;
+  --accent-ink:   #FFF3EC;   /* light text on solid clay */
+  --accent-quiet: rgba(193, 95, 62, .10);
+  --accent-soft:  rgba(193, 95, 62, .17);
+  --accent-line:  rgba(193, 95, 62, .32);
+  --accent-glow:  rgba(193, 95, 62, .40);
+
+  --online:      #4E8C6A;
+  --online-line: rgba(78, 140, 106, .5);
+  --online-glow: rgba(78, 140, 106, .18);
+  --offline:     #B0897B;
+  --danger:      #BC4C38;
+  --danger-ink:  #7A2A1D;
+  --danger-bg:   #F6E2DB;
+  --danger-line: #E0B4AA;
+  --danger-bg-hover:     #EFCEC4;
+  --danger-strong:       #BF4E39;
+  --danger-strong-hover: #A9422F;
+  --danger-strong-ink:   #FFF1EC;
+  --warn:        #93611C;
+  --warn-bg:     #F5ECD5;
+  --warn-line:   #E0CB9C;
+
+  --scrollbar:       #D0C7B3;
+  --scrollbar-hover: #BCB199;
+
+  --shadow-sm: 0 1px 2px rgba(74, 60, 40, .10);
+  --shadow:    0 14px 34px rgba(74, 60, 40, .13);
+  --shadow-lg: 0 30px 72px rgba(60, 45, 28, .20);
+
+  color-scheme: light;
+}
+
+/* Light: the brand tile reads as a soft clay chip, not a dark espresso well. */
+:root[data-theme="light"] .brand-mark {
+  background: linear-gradient(158deg, #FBEDE5, #F3DDD2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 10px 22px -13px var(--accent-glow);
+}
+
 /* ---- base --------------------------------------------------------------- */
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 1080px; min-height: 680px; overflow: hidden; background: var(--bg); }
 ::selection { background: var(--accent-soft); color: var(--ink); }
 
-* { scrollbar-width: thin; scrollbar-color: #3C352B transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
 ::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-thumb { background: #3C352B; background-clip: padding-box; border: 3px solid transparent; border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #4E4638; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); background-clip: padding-box; border: 3px solid transparent; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 button, input, select, textarea { font: inherit; }
@@ -151,7 +223,7 @@ button:focus-visible, [role="tab"]:focus-visible, a:focus-visible {
 .profile-section { display: flex; flex: 1; flex-direction: column; min-height: 0; border-bottom: 0; }
 .form-scroll { display: grid; gap: 10px; min-height: 0; margin-top: 10px; padding-right: 3px; overflow: auto; }
 label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
-input, select, textarea { width: 100%; color: var(--ink); background: #17130E; border: 1px solid var(--border-strong); border-radius: var(--r-sm); outline: none; font-size: 12px; letter-spacing: 0; transition: border-color .15s, box-shadow .15s; }
+input, select, textarea { width: 100%; color: var(--ink); background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: var(--r-sm); outline: none; font-size: 12px; letter-spacing: 0; transition: border-color .15s, box-shadow .15s; }
 input, select { height: 33px; padding: 0 10px; }
 textarea { min-height: 50px; padding: 8px 10px; resize: vertical; font-family: var(--font-ui); }
 input::placeholder, textarea::placeholder { color: var(--dim); }
@@ -166,7 +238,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .save-button { min-height: 37px; margin-top: 3px; font-size: 12px; }
 
 .delete-profile-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; color: var(--danger-ink); background: var(--danger-bg); border: 1px solid var(--danger-line); border-radius: var(--r-sm); font-size: 11px; font-weight: 600; transition: background .15s, border-color .15s, color .15s; }
-.delete-profile-button:not(:disabled):hover { color: #fff; background: #3A211B; border-color: var(--danger); }
+.delete-profile-button:not(:disabled):hover { color: var(--danger-ink); background: var(--danger-bg-hover); border-color: var(--danger); }
 
 .key-setup { display: grid; gap: 7px; padding: 10px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-sm); box-shadow: inset 2px 0 0 var(--accent-line); }
 .key-setup label { color: var(--ink-2); }
@@ -195,6 +267,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .header-mode { display: grid; width: 34px; height: 34px; place-items: center; color: var(--muted); background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm); transition: color .15s, background .15s, border-color .15s; }
 .header-mode:hover { color: var(--ink); background: var(--surface-2); border-color: var(--border-strong); }
 .header-mode.active { color: var(--accent); background: var(--accent-quiet); border-color: var(--accent-line); }
+.header-sep { align-self: center; width: 1px; height: 20px; background: var(--border-strong); border-radius: 1px; }
 
 .tab-strip { display: flex; align-items: stretch; gap: 3px; min-width: 0; padding: 6px 14px 0; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; }
 .terminal-tab { display: inline-flex; align-items: center; gap: 8px; min-width: 152px; max-width: 244px; padding: 0 8px 0 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-bottom: 0; border-radius: var(--r-sm) var(--r-sm) 0 0; font-size: 11px; transition: color .15s, background .15s; }
@@ -315,7 +388,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .operation-button.preview { color: var(--ink-2); background: var(--surface-3); border-color: var(--border-strong); }
 .operation-button.preview:not(:disabled):hover { color: var(--ink); background: var(--raised); border-color: var(--faint); }
 .operation-button.danger { color: var(--danger-ink); background: var(--danger-bg); border-color: var(--danger-line); }
-.operation-button.danger:not(:disabled):hover { color: #fff; background: #3A211B; border-color: var(--danger); }
+.operation-button.danger:not(:disabled):hover { color: var(--danger-ink); background: var(--danger-bg-hover); border-color: var(--danger); }
 
 .inline-actions, .inline-form { display: flex; gap: 8px; }
 .inline-actions button, .inline-form button, .operation-row button, .blackbox-row button { min-height: 30px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-xs); font-size: 10px; transition: background .15s, border-color .15s, color .15s; }
@@ -375,8 +448,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .modal-actions .confirm-button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .destructive-modal { border-color: var(--danger-line); }
 .confirm-modal.destructive-modal > svg { color: var(--danger); }
-.modal-actions .delete-confirm-button { color: var(--danger-ink); background: #6A322B; border-color: var(--danger); font-weight: 600; }
-.modal-actions .delete-confirm-button:hover { background: #7E3B33; }
+.modal-actions .delete-confirm-button { color: var(--danger-strong-ink); background: var(--danger-strong); border-color: var(--danger); font-weight: 600; }
+.modal-actions .delete-confirm-button:hover { background: var(--danger-strong-hover); }
 
 /* ---- responsive --------------------------------------------------------- */
 @media (max-width: 1180px) {

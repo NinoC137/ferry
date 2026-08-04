@@ -1,25 +1,100 @@
 import { useEffect, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import type { ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { desktopAvailable, startTerminal } from "./bridge";
 import { TerminalInputQueue, forwardDroppedInput } from "./terminalInput";
+
+const DARK_THEME: ITheme = {
+  background: "#14110D",
+  foreground: "#E7E0D4",
+  cursor: "#D97757",
+  cursorAccent: "#14110D",
+  selectionBackground: "#3A2A20",
+  black: "#14110D",
+  brightBlack: "#6E6557",
+  red: "#DB7368",
+  brightRed: "#EC9384",
+  green: "#86B89E",
+  brightGreen: "#A6D2BC",
+  yellow: "#E0A961",
+  brightYellow: "#F0C88A",
+  blue: "#7FA6C9",
+  brightBlue: "#A6C6E0",
+  magenta: "#C79AC0",
+  brightMagenta: "#DDB6D6",
+  cyan: "#83BEB3",
+  brightCyan: "#A6D6CC",
+  white: "#CDC5B8",
+  brightWhite: "#EFE9DD",
+};
+
+// Warm-paper counterpart: cream ground, espresso ink, deep-clay cursor, and an
+// ANSI ramp darkened so 16-color output stays legible on light.
+const LIGHT_THEME: ITheme = {
+  background: "#ECE5D6",
+  foreground: "#3A3025",
+  cursor: "#B4502F",
+  cursorAccent: "#ECE5D6",
+  selectionBackground: "rgba(180, 80, 47, .20)",
+  black: "#3A3025",
+  brightBlack: "#7A6F5C",
+  red: "#B04A38",
+  brightRed: "#C25E4A",
+  green: "#4E7D5F",
+  brightGreen: "#5C9E7B",
+  yellow: "#9A6B24",
+  brightYellow: "#B0832E",
+  blue: "#3D6E93",
+  brightBlue: "#5385A8",
+  magenta: "#8A5684",
+  brightMagenta: "#A06E9A",
+  cyan: "#3C837A",
+  brightCyan: "#4E9A90",
+  white: "#B7AC96",
+  brightWhite: "#EDE7D9",
+};
+
+const themeFor = (mode: "dark" | "light"): ITheme => (mode === "light" ? LIGHT_THEME : DARK_THEME);
+
+// Status banners use raw SGR so they read on either ground: fixed 256-palette
+// indices on espresso, truecolor equivalents on paper.
+const MESSAGE_COLORS = {
+  dark: {
+    connecting: "\x1b[38;5;180m",
+    connected: "\x1b[38;5;151m",
+    preview: "\x1b[38;5;222m",
+    closed: "\x1b[38;5;173m",
+    error: "\x1b[38;5;174m",
+  },
+  light: {
+    connecting: "\x1b[38;2;154;107;36m",
+    connected: "\x1b[38;2;62;110;80m",
+    preview: "\x1b[38;2;150;104;35m",
+    closed: "\x1b[38;2;176;74;56m",
+    error: "\x1b[38;2;176;74;56m",
+  },
+} as const;
 
 interface TerminalPaneProps {
   tabId: string;
   deviceName: string;
   active: boolean;
   command?: string;
+  theme: "dark" | "light";
   onStarted: (tabId: string, sessionId: string) => void;
   onActivity: (message: string) => void;
 }
 
-export function TerminalPane({ tabId, deviceName, active, command, onStarted, onActivity }: TerminalPaneProps) {
+export function TerminalPane({ tabId, deviceName, active, command, theme, onStarted, onActivity }: TerminalPaneProps) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const visible = useRef(active);
   const syncSize = useRef<() => void>(() => {});
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   useEffect(() => {
     const term = new Terminal({
@@ -30,29 +105,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       fontSize: 13,
       lineHeight: 1.35,
       scrollback: 8000,
-      theme: {
-        background: "#14110D",
-        foreground: "#E7E0D4",
-        cursor: "#D97757",
-        cursorAccent: "#14110D",
-        selectionBackground: "#3A2A20",
-        black: "#14110D",
-        brightBlack: "#6E6557",
-        red: "#DB7368",
-        brightRed: "#EC9384",
-        green: "#86B89E",
-        brightGreen: "#A6D2BC",
-        yellow: "#E0A961",
-        brightYellow: "#F0C88A",
-        blue: "#7FA6C9",
-        brightBlue: "#A6C6E0",
-        magenta: "#C79AC0",
-        brightMagenta: "#DDB6D6",
-        cyan: "#83BEB3",
-        brightCyan: "#A6D6CC",
-        white: "#CDC5B8",
-        brightWhite: "#EFE9DD",
-      },
+      theme: themeFor(themeRef.current),
     });
     const fitAddon = new FitAddon();
     terminal.current = term;
@@ -63,7 +116,7 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       fitAddon.fit();
     }
     term.focus();
-    term.writeln(`\x1b[38;5;180mConnecting to ${deviceName}...\x1b[0m`);
+    term.writeln(`${MESSAGE_COLORS[themeRef.current].connecting}Connecting to ${deviceName}...\x1b[0m`);
 
     const encoder = new TextEncoder();
     let socket: WebSocket | undefined;
@@ -103,11 +156,11 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
         const started = await startTerminal(deviceName, term.cols, term.rows, command);
         if (disposed) return;
         onStarted(tabId, started.sessionId);
-        term.writeln(`\x1b[38;5;151mConnected via ${started.transport.toUpperCase()}\x1b[0m\r\n`);
+        term.writeln(`${MESSAGE_COLORS[themeRef.current].connected}Connected via ${started.transport.toUpperCase()}\x1b[0m\r\n`);
         onActivity(`${deviceName}: terminal connected via ${started.transport.toUpperCase()}`);
 
         if (!desktopAvailable) {
-          term.writeln("\x1b[38;5;222mBrowser preview: terminal input is not sent to a device.\x1b[0m");
+          term.writeln(`${MESSAGE_COLORS[themeRef.current].preview}Browser preview: terminal input is not sent to a device.\x1b[0m`);
           term.write("root@rk3588-lab:~# ");
           return;
         }
@@ -131,12 +184,12 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
         socket.onclose = () => {
           terminalReady = false;
           if (!disposed) {
-            term.writeln("\r\n\x1b[38;5;173mTerminal connection closed.\x1b[0m");
+            term.writeln(`\r\n${MESSAGE_COLORS[themeRef.current].closed}Terminal connection closed.\x1b[0m`);
             onActivity(`${deviceName}: terminal connection closed`);
           }
         };
       } catch (error) {
-        term.writeln(`\r\n\x1b[38;5;174mUnable to start terminal: ${String(error)}\x1b[0m`);
+        term.writeln(`\r\n${MESSAGE_COLORS[themeRef.current].error}Unable to start terminal: ${String(error)}\x1b[0m`);
         onActivity(`${deviceName}: terminal start failed`);
       }
     };
@@ -183,6 +236,11 @@ export function TerminalPane({ tabId, deviceName, active, command, onStarted, on
       fit.current = null;
     };
   }, [command, deviceName, onActivity, onStarted, tabId]);
+
+  useEffect(() => {
+    const term = terminal.current;
+    if (term) term.options.theme = themeFor(theme);
+  }, [theme]);
 
   useEffect(() => {
     visible.current = active;

@@ -22,6 +22,8 @@ import {
   Save,
   Server,
   Settings2,
+  Sun,
+  Moon,
   TerminalSquare,
   Trash2,
   Usb,
@@ -51,6 +53,30 @@ const iconForTransport = (transport: string) => {
   return Server;
 };
 
+type ThemeMode = "dark" | "light";
+const THEME_STORAGE_KEY = "ferry-theme";
+
+// Resolve the startup theme: an explicit past choice wins, otherwise follow the
+// operating system. Read once at module load so the correct palette is on the
+// document before React's first paint (no dark-to-light flash).
+const readStoredTheme = (): ThemeMode => {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // localStorage may be unavailable; fall back to the OS preference.
+  }
+  if (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches) return "light";
+  return "dark";
+};
+
+const applyTheme = (mode: ThemeMode) => {
+  document.documentElement.dataset.theme = mode;
+};
+
+const initialTheme = readStoredTheme();
+applyTheme(initialTheme);
+
 function App() {
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -67,6 +93,17 @@ function App() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyConfirmOpen, setKeyConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(initialTheme);
+  const toggleTheme = () => setTheme((mode) => (mode === "dark" ? "light" : "dark"));
+
+  useEffect(() => {
+    applyTheme(theme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Non-fatal: the theme still applies for this session.
+    }
+  }, [theme]);
 
   const addActivity = useCallback((message: string) => {
     setActivity((entries) => [`${new Date().toLocaleTimeString()}  ${message}`, ...entries].slice(0, 30));
@@ -304,6 +341,8 @@ function App() {
           </div>
           <div className="header-tools">
             {connectionMessage && <span className="connection-message">{connectionMessage}</span>}
+            <button className="header-mode" title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-label="Toggle color theme" onClick={toggleTheme}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button>
+            <span className="header-sep" />
             <button className={`header-mode ${view === "overview" ? "active" : ""}`} title="Open fleet overview" onClick={() => setView("overview")}><LayoutDashboard size={16} /></button>
             <button className={`header-mode ${view === "scan" ? "active" : ""}`} title="Discover devices" onClick={() => setView("scan")}><Radar size={16} /></button>
             <button className={`header-mode ${view === "operations" ? "active" : ""}`} title="Open operations workbench" onClick={() => setView("operations")}><Clipboard size={16} /></button>
@@ -320,7 +359,7 @@ function App() {
         <div className="workspace-body">
           <div className="terminal-stage">
             <div className={`workspace-layer ${view === "terminal" ? "active" : ""}`}>
-              {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} active={activeTab === tab.id && view === "terminal"} onStarted={started} onActivity={addActivity} /></div>)}
+              {tabs.map((tab) => <div className={`terminal-panel ${activeTab === tab.id ? "active" : ""}`} key={tab.id}><TerminalPane tabId={tab.id} deviceName={tab.deviceName} command={tab.command} theme={theme} active={activeTab === tab.id && view === "terminal"} onStarted={started} onActivity={addActivity} /></div>)}
               {!tabs.length && <div className="empty-terminal"><MonitorCog size={32} /><h1>Open a device terminal</h1><p>Choose a profile, then start an SSH, ADB, or serial session.</p><button className="command-button" onClick={openTerminal} disabled={!selected}><TerminalSquare size={16} />Start terminal</button></div>}
             </div>
             <div className={`workspace-layer ${view === "overview" ? "active" : ""}`}><OverviewPanel devices={devices} busy={busy} onRefresh={() => void refreshDevices()} onSelect={selectDevice} /></div>
