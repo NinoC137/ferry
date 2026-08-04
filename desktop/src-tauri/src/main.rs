@@ -297,7 +297,13 @@ fn check_connection(name: String) -> Result<ProbeResult, String> {
     let d = Config::load()
         .find(&name)
         .ok_or_else(|| format!("Unknown device '{name}'."))?;
-    Ok(probe_device(&d))
+    let probe = probe_device(&d);
+    // 端口通、且已配好私钥的 SSH 设备，顺手免密采集一次指纹，让"测试连接"也能
+    // 补齐早已装好密钥但从没落过档的设备身份（remember 现在是非破坏性合并的）。
+    if probe.online && d.transport == Transport::Ssh && d.key.is_some() {
+        let _ = ferry::fingerprint::remember(&d, &d.host);
+    }
+    Ok(probe)
 }
 
 #[tauri::command(async)]
@@ -317,8 +323,26 @@ fn setup_ssh_key(request: SetupSshKeyRequest) -> Result<OperationResult, String>
     let profile = cfg.devices.get_mut(&device.name)
         .ok_or_else(|| format!("Device '{}' disappeared while saving its identity file.", device.name))?;
     profile.key = Some(identity.clone());
+    let anchored = profile.clone();
     cfg.save().map_err(|error| error.to_string())?;
-    Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}. Identity file: {}", device.name, identity) })
+    // 密钥装好、免密登录验证通过后，顺手用 key 认证采集一次设备指纹，
+    // 把 hostname / os / kernel / arch 落盘到 facts，概览卡片才不会一直停在
+    // "identity not collected / platform unknown"。采集失败不阻断整个流程。
+    let identity_note = {
+        let facts = ferry::fingerprint::remember(&anchored, &anchored.host);
+        let platform = [facts.os.as_str(), facts.arch.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        match (facts.hostname.is_empty(), platform.is_empty()) {
+            (false, false) => format!(" Identified {} ({platform}).", facts.hostname),
+            (false, true) => format!(" Identified {}.", facts.hostname),
+            (true, false) => format!(" Detected {platform}."),
+            (true, true) => String::new(),
+        }
+    };
+    Ok(OperationResult { ok: true, detail: format!("Public key installed and passwordless login verified for {}. Identity file: {}.{}", device.name, identity, identity_note) })
 }
 
 fn plugin_view(plugin: &ferry::plugins::Plugin) -> PluginView {

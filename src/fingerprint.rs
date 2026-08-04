@@ -71,8 +71,29 @@ pub fn remember(d: &Device, ip_seen: &str) -> Facts {
         Transport::Serial => return config::facts_load(&d.name), // 串口由 up 流程负责
     };
     let old = config::facts_load(&d.name);
+    // 采集是尽力而为：任一字段这次没拿到（板子忙 / busybox 缺命令 / 免密没配好），
+    // 就沿用旧档，绝不用空串覆盖已有身份，避免"点一下反而把 hostname 抹没了"。
     if f.machine_id.is_empty() {
         f.machine_id = old.machine_id.clone();
+    }
+    if f.hostname.is_empty() {
+        f.hostname = old.hostname.clone();
+    }
+    if f.kernel.is_empty() {
+        f.kernel = old.kernel.clone();
+    }
+    if f.arch.is_empty() {
+        f.arch = old.arch.clone();
+    }
+    if f.cpu_serial.is_empty() {
+        f.cpu_serial = old.cpu_serial.clone();
+    }
+    if f.macs.is_empty() {
+        f.macs = old.macs.clone();
+    }
+    // os 永远非空（至少是 "linux"），但若这次连不上导致全空，也回退旧值。
+    if f.hostname.is_empty() && f.kernel.is_empty() && f.arch.is_empty() && !old.os.is_empty() {
+        f.os = old.os.clone();
     }
     f.last_ip = ip_seen.to_string();
     config::facts_save(&d.name, &f);
